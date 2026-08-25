@@ -178,6 +178,7 @@ export class Lighting {
     this.sunIntensity = 3.0;
 
     this._adopted = new WeakSet();
+    this._adoptFn = (o) => this._adoptObject(o);
     this._frame = -1;
     this._envDirty = true;
     this._envTimer = 0;
@@ -410,7 +411,7 @@ export class Lighting {
 
   /** Walk the scene and pick up anything created since the last pass. */
   autoAdopt() {
-    this.scene.traverse(this._adoptObject.bind(this));
+    this.scene.traverse(this._adoptFn);
   }
 
   _csmSetup(material) {
