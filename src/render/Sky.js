@@ -89,14 +89,24 @@ void main() {
   // integer-offset domain warp keeps the tile seamless
   vec2 w = vec2(fbmT(p * 0.5 + vec2(3.0, 11.0), per * 0.5, 2),
                 fbmT(p * 0.5 + vec2(17.0, 5.0), per * 0.5, 2)) - 0.5;
-  vec2 q = p + w * 2.6;
+  vec2 q = p + w * 1.15;
 
-  float cumulus = fbmT(q, per, 5);
-  // billow: push mid-tones apart so the threshold yields chunky, rounded shapes
-  cumulus = clamp(cumulus * 1.20 - 0.07, 0.0, 1.0);
-  cumulus = mix(cumulus, cumulus * cumulus * (3.0 - 2.0 * cumulus), 0.55);
+  // Billowy cumulus: an fbm of |noise| gives rounded, cauliflower lobes rather than
+  // the smeary ridges a plain fbm threshold produces.
+  float cumulus = 0.0, amp = 0.5, nrm = 0.0;
+  {
+    vec2 cp = q; float cper = per;
+    for (int i = 0; i < 5; i++) {
+      float n = vnT(cp, cper) * 2.0 - 1.0;
+      cumulus += amp * (1.0 - abs(n) * 0.55);
+      nrm += amp; cp = cp * 2.0 + vec2(1.0, 3.0); cper *= 2.0; amp *= 0.52;
+    }
+    cumulus /= nrm;
+  }
+  cumulus = clamp((cumulus - 0.42) * 2.35, 0.0, 1.0);
+  cumulus = cumulus * cumulus * (3.0 - 2.0 * cumulus);
 
-  vec2 qc = vec2(q.x, q.y * 0.35) + vec2(23.0, 7.0);
+  vec2 qc = vec2(p.x, p.y * 0.32) + vec2(23.0, 7.0);
   float cirrus = ridgeT(qc, per, 4);
 
   float mask = fbmT(p * 0.25 + vec2(41.0, 29.0), per * 0.25, 2);
@@ -218,10 +228,12 @@ vec4 cloudDeck(vec3 d, float H, float scale, float cov, float wisp, float speed)
 
   float base = wisp > 0.5 ? A.g : A.r;
   float det  = wisp > 0.5 ? B.g : B.r;
-  float dns = (base * 0.64 + det * 0.36) * (0.60 + 0.72 * A.b) * 1.18;
+  float dns = (base * 0.72 + det * 0.28) * (0.52 + 0.86 * A.b) * 1.10;
 
-  float hz = smoothstep(0.030, 0.30, dy);
-  float covr = cov + (1.0 - hz) * 0.34;
+  // The playable FOV only reaches ~20 degrees of elevation, so this fade has to bite
+  // very low or the deck never enters frame at all.
+  float hz = smoothstep(0.020, 0.115, dy);
+  float covr = cov + (1.0 - hz) * 0.18;
 
   float sharp = uCloudSharp;
   float a = smoothstep(covr, covr + sharp, dns);
@@ -234,8 +246,8 @@ vec4 cloudDeck(vec3 d, float H, float scale, float cov, float wisp, float speed)
     self = 0.70 + 0.25 * (1.0 - smoothstep(covr, covr + sharp * 2.2, dns));
   } else {
     vec2 sunOff = normalize(uSunDir.xz + vec2(1e-4, 0.0)) * 0.050;
-    float litD = (texture2D(tClouds, uv + sunOff).r * 0.64 + det * 0.36) * (0.60 + 0.72 * A.b) * 1.18;
-    self = clamp((dns - litD) * 3.4 + 0.50, 0.0, 1.0);
+    float litD = (texture2D(tClouds, uv + sunOff).r * 0.72 + det * 0.28) * (0.52 + 0.86 * A.b) * 1.10;
+    self = clamp((dns - litD) * 3.2 + 0.55, 0.0, 1.0);
     self *= mix(1.0, 0.60, smoothstep(covr + sharp, covr + sharp * 3.0, dns));
   }
 
@@ -281,10 +293,10 @@ void main() {
   sky += uInscatter * pow(sp, 1.4) * 0.045;
 
   /* ---- cloud decks --------------------------------------------------------- */
-  vec4 hi = cloudDeck(d, 3000.0, uCloudScale * 0.40, uCoverage + 0.20, 1.0, 0.0018);
+  vec4 hi = cloudDeck(d, 3400.0, uCloudScale * 0.55, uCoverage + 0.26, 1.0, 0.0016);
   vec4 lo = cloudDeck(d, 760.0,  uCloudScale,        uCoverage,        0.0, 0.0075);
 
-  sky = mix(sky, hi.rgb, hi.a * 0.38);
+  sky = mix(sky, hi.rgb, hi.a * 0.24);
   sky = mix(sky, lo.rgb, lo.a);
 
   // the sun burns through thin cloud
@@ -312,10 +324,10 @@ const DEFAULTS = {
   sunIntensity: 26.0,
   sunSize: 0.028,
   coverage: 0.46,
-  cloudSharp: 0.175,
-  cloudScale: 0.00058,
+  cloudSharp: 0.105,
+  cloudScale: 0.00031,
   wind: 1.0,
-  hazePower: 0.52,
+  hazePower: 0.42,
   skyGain: 1.0,
   grain: 1.0,
   lutSize: 512,
@@ -370,6 +382,7 @@ export class Sky {
     this.mesh.layers.set(LAYER_SKY);
     this.mesh.userData.noCel = true;
     this.mesh.userData.noGBuffer = true;
+    this.mesh.userData.noShadow = true;   // a 1.6km dome must never enter a cascade
 
     if (o.renderer) this.bake(o.renderer);
   }

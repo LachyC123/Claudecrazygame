@@ -7,7 +7,8 @@
  *   RenderPass       (scene, linear HDR)
  *   InkOutlinePass   (depth + normal edge detection — the Borderlands signature)
  *   AO               (Alchemy/HBAO from the G-buffer, banded for a painted feel)
- *   Bloom            (UnrealBloom, HDR threshold ~1 so only emissives and the sun blow)
+ *   Bloom            (3-level threshold chain, HDR threshold ~1 so only emissives
+ *                     and the sun disc ever blow out)
  *   MotionBlur       (camera reprojection from the G-buffer)
  *   DepthOfField     (CoC from the G-buffer, ADS-driven)
  *   Grade            (chromatic aberration -> tonemap -> lift/gamma/gain + split tone
@@ -149,10 +150,10 @@ class AOComputePass extends Pass {
     this.uniforms = {
       tGBuffer: { value: gbuffer.target.texture },
       uTexel: { value: new THREE.Vector2(1 / w, 1 / h) },
-      uRadius: { value: 0.85 },
+      uRadius: { value: 1.35 },
       uProjScale: { value: 500 },
       uBias: { value: 0.014 },
-      uIntensity: { value: 1.55 },
+      uIntensity: { value: 1.9 },
       uMaxRadiusPx: { value: 72 },
       uProj: { value: new THREE.Vector2(1, 1) },
       uFrame: { value: 0 },
@@ -237,8 +238,8 @@ class AOApplyPass extends Pass {
       tAO: { value: aoPass.target.texture },
       tGBuffer: { value: gbuffer.target.texture },
       uAOTexel: { value: new THREE.Vector2(1, 1) },
-      uTint: { value: new THREE.Color(opts.tint ?? 0x3d4a5c) },
-      uStrength: { value: opts.strength ?? 0.9 },
+      uTint: { value: new THREE.Color(opts.tint ?? 0x2f3d52) },
+      uStrength: { value: opts.strength ?? 1.0 },
       uBand: { value: opts.band ?? 0.45 },
     };
     this.material = new THREE.ShaderMaterial({
@@ -659,7 +660,7 @@ void main() {
   /* ---- chromatic aberration: edges only ---------------------------------- */
   vec3 col;
   // ~2.5 device px of split at the extreme corner, zero in the centre
-  float ca = uCA * (r2 * r2) * 0.055;
+  float ca = uCA * (r2 * r2) * 0.020;
   if (ca > 1e-6) {
     vec2 dir = cc * ca;
     col.r = texture2D(tDiffuse, uv + dir).r;
@@ -732,7 +733,7 @@ class GradePass extends Pass {
       uBleach: { value: 0.35 },
       uCA: { value: 1.0 },
       uGrain: { value: 1.0 },
-      uVignette: { value: 0.42 },
+      uVignette: { value: 0.34 },
       uVignetteSoft: { value: 0.06 },
       uLift: { value: new THREE.Vector3(-0.004, 0.002, 0.014) },
       uGamma: { value: new THREE.Vector3(1.0, 1.0, 1.02) },
@@ -741,7 +742,7 @@ class GradePass extends Pass {
       uHighlightTint: { value: new THREE.Color(1.06, 1.0, 0.90) },
       uTintAmount: { value: 0.55 },
       uSaturation: { value: 1.08 },
-      uContrast: { value: 1.06 },
+      uContrast: { value: 1.10 },
       uToe: { value: 0.16 },
       uHitFlash: { value: 0 },
       uLowHealth: { value: 0 },
@@ -881,6 +882,8 @@ export class PostFX {
     this._capFrame = 0;
     this._capTotal = ctx.captureRequest?.frames ?? 45;
     this._staged = !!cfg.capture;
+    this._heavyMs = 0;
+    this._f1 = 0;
     this._warmRT = this._staged
       ? new THREE.WebGLRenderTarget(320, 180, { type: THREE.HalfFloatType, depthBuffer: true })
       : null;
@@ -994,12 +997,18 @@ export class PostFX {
     g.uExposure.value = this.ctx.renderer.toneMappingExposure;
     g.uHitFlash.value = this._hitFlash;
     g.uLowHealth.value = this._lowHealth;
-    g.uVignette.value = 0.42 + this._ads * 0.22;
+    g.uVignette.value = 0.34 + this._ads * 0.20;
     g.uCA.value = (cfg.postfx?.chromatic === false ? 0 : 1) * (1.0 + this._ads * 0.5);
 
     if (this._staged) {
       const f = this._capFrame++;
-      if (f >= 2 && f < this._capTotal - 8) {
+      const now = performance.now();
+      if (f === 1) this._f1 = now;
+      else if (f === 2 && this._f1) this._heavyMs = now - this._f1;
+      // If a full-stack frame is expensive on this machine, shrink the trailing
+      // full-quality window so the capture harness still gets its READY in time.
+      const tail = this._heavyMs > 1500 ? 3 : this._heavyMs > 900 ? 5 : 8;
+      if (f >= 2 && f < this._capTotal - tail) {
         const r = this.ctx.renderer;
         r.setRenderTarget(this._warmRT);
         r.render(this.ctx.scene, this.ctx.camera);

@@ -382,9 +382,9 @@ void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(
 const INK_DEFAULTS = {
   ink: 0x07070a,
   strength: 1.0,
-  widthNear: 3.2,
-  widthFar: 1.2,
-  widthDist: [4.0, 120.0],
+  widthNear: 4.2,
+  widthFar: 1.35,
+  widthDist: [3.0, 90.0],
   depthThresh: 0.022,
   depthKnee: 0.055,
   normalThresh: 0.26,
@@ -393,7 +393,7 @@ const INK_DEFAULTS = {
   normalFalloff: 0.010,
   fade: [230.0, 520.0],
   jitter: 0.30,
-  variation: 0.42,
+  variation: 0.34,
   inkPooling: 0.55,
   interior: 1.0,
 };

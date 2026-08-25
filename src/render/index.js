@@ -73,6 +73,6 @@ export {
 } from './CelMaterial.js';
 
 export { Sky, createSky } from './Sky.js';
-export { Lighting, installLightRig } from './Lighting.js';
+export { Lighting, installLightRig, buildRenderProbe } from './Lighting.js';
 export { GBufferPass, InkOutlinePass, INK_DEFAULTS } from './OutlinePass.js';
 export { LAYER_SKY, RENDER_CAPS, setExposure, TONEMAP_GLSL } from '../core/Renderer.js';

@@ -49,7 +49,7 @@
  *   rimStrength  (number, default 0.32)   0 disables rim
  *   rimRange     (number, default 90)     metres at which rim has faded out
  *   hatch        (number, default 0.7)    cross-hatch amount in shadow (0 disables)
- *   hatchScale   (number, default 5.0)    lines per world metre
+ *   hatchScale   (number, default 2.6)    lines per world metre
  *   grain        (number, default 1.0)    painterly albedo grain (0 disables)
  *   grainScale   (number, default 1.6)
  *   specBand     (number, default 1.0)    0 = smooth PBR spec, 1 = hard toon blob
@@ -278,7 +278,10 @@ const CEL_LIGHT = /* glsl */ `
       diffuseColor.rgb * chroma * ramp * (qf * uCelKeyIrr * RECIPROCAL_PI) * hatchLit;
 
   // ---- 2. cool, hatched ambient ---------------------------------------------
-  reflectedLight.indirectDiffuse *= uCelAmbTint * uCelAmbGain * mix(hatch, 1.0, 0.45);
+  // Hatch only bites in the shadow band. Letting it modulate fully-lit ambient made
+  // large lit surfaces (the desert floor) shimmer with moire at mid distance.
+  reflectedLight.indirectDiffuse *= uCelAmbTint * uCelAmbGain *
+      mix(hatch, 1.0, mix(0.40, 1.0, smoothstep(0.12, 0.62, q)));
 
   // ---- 3. hard toon specular blob -------------------------------------------
   if (uCelSpecBand > 0.001) {
@@ -297,7 +300,7 @@ const CEL_LIGHT = /* glsl */ `
     // A hard grazing gate: on flat-shaded geometry a plain fresnel lights up whole
     // facets and the model reads as a wireframe. Only near-perpendicular surfaces —
     // i.e. actual silhouette edges — are allowed to catch the rim.
-    float fres = pow(1.0 - ndv, uCelRimPower) * smoothstep(0.46, 0.10, ndv);
+    float fres = pow(1.0 - ndv, uCelRimPower) * smoothstep(0.32, 0.03, ndv);
     float back = clamp(dot(celNw, -uCelSunDir) * 0.5 + 0.5, 0.0, 1.0);
     float rim = fres * rimAmt;
     rim *= mix(1.0, 0.45, smoothstep(0.30, 0.92, q));          // strongest in shadow
@@ -344,7 +347,7 @@ function celUniformsFor(o = {}) {
     uCelRimStrength:{ value: o.rimStrength ?? 0.32 },
     uCelRimRange:   { value: o.rimRange ?? 90.0 },
     uCelHatch:      { value: o.hatch ?? 0.7 },
-    uCelHatchScale: { value: o.hatchScale ?? 5.0 },
+    uCelHatchScale: { value: o.hatchScale ?? 2.6 },
     uCelGrain:      { value: o.grain ?? 1.0 },
     uCelGrainScale: { value: o.grainScale ?? 1.6 },
     uCelSpecBand:   { value: o.specBand ?? 1.0 },

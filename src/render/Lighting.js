@@ -51,7 +51,7 @@ const KEYS = [
     cloudLit: 0xffd2a4, cloudShadow: 0x5e6f8e, inscatter: 0xff9d55,
     hemiSky: 0x8aa8c6, hemiGnd: 0x4b3c2e, hemiI: 1.02, ambGain: 1.18,
     fogDensity: 0.0038, fogHorizon: 0xd8b491, fogZenith: 0x5d7b98, fogSun: 0xff9f58,
-    coverage: 0.50, exposure: 1.22, skyGain: 0.85,
+    coverage: 0.49, exposure: 1.22, skyGain: 0.85,
     warm: 0xffdcb4, cool: 0x6d8bb0,
   },
   { // 0.22 — morning
@@ -61,7 +61,7 @@ const KEYS = [
     cloudLit: 0xfff5e6, cloudShadow: 0x92a9c2, inscatter: 0xffcf96,
     hemiSky: 0xa8c7e0, hemiGnd: 0x6b5a42, hemiI: 1.55, ambGain: 1.35,
     fogDensity: 0.0027, fogHorizon: 0xcfd8ce, fogZenith: 0x7ea6be, fogSun: 0xffd6a2,
-    coverage: 0.52, exposure: 1.06, skyGain: 1.0,
+    coverage: 0.505, exposure: 1.06, skyGain: 1.0,
     warm: 0xfff1da, cool: 0x8db4d6,
   },
   { // 0.45 — noon
@@ -71,7 +71,7 @@ const KEYS = [
     cloudLit: 0xfffdf6, cloudShadow: 0x9cb2c8, inscatter: 0xffe3bb,
     hemiSky: 0xb5d3ea, hemiGnd: 0x77664c, hemiI: 1.62, ambGain: 1.38,
     fogDensity: 0.0023, fogHorizon: 0xd3ddd8, fogZenith: 0x86b0c8, fogSun: 0xffe6c0,
-    coverage: 0.54, exposure: 1.0, skyGain: 1.06,
+    coverage: 0.515, exposure: 1.0, skyGain: 1.06,
     warm: 0xfff6e8, cool: 0x93bcdd,
   },
   { // 0.70 — afternoon
@@ -81,7 +81,7 @@ const KEYS = [
     cloudLit: 0xfff6e4, cloudShadow: 0x93a6c0, inscatter: 0xffd39c,
     hemiSky: 0xa9c9e2, hemiGnd: 0x6f5c42, hemiI: 1.52, ambGain: 1.32,
     fogDensity: 0.0028, fogHorizon: 0xd0d6c9, fogZenith: 0x7ea6c0, fogSun: 0xffd8a4,
-    coverage: 0.55, exposure: 1.06, skyGain: 1.0,
+    coverage: 0.52, exposure: 1.06, skyGain: 1.0,
     warm: 0xfff0d6, cool: 0x8ab0d4,
   },
   { // 0.88 — golden hour
@@ -91,7 +91,7 @@ const KEYS = [
     cloudLit: 0xffdfb0, cloudShadow: 0x77809e, inscatter: 0xffab5e,
     hemiSky: 0x94b0d0, hemiGnd: 0x5d4733, hemiI: 1.25, ambGain: 1.22,
     fogDensity: 0.0034, fogHorizon: 0xe0bd93, fogZenith: 0x6b8fae, fogSun: 0xffb469,
-    coverage: 0.58, exposure: 1.14, skyGain: 0.94,
+    coverage: 0.50, exposure: 1.14, skyGain: 0.94,
     warm: 0xffe0ae, cool: 0x7392b8,
   },
   { // 1.00 — dusk
@@ -101,7 +101,7 @@ const KEYS = [
     cloudLit: 0xffb887, cloudShadow: 0x50597a, inscatter: 0xff7f42,
     hemiSky: 0x6d88ab, hemiGnd: 0x3e3226, hemiI: 0.92, ambGain: 1.15,
     fogDensity: 0.0042, fogHorizon: 0xcb9670, fogZenith: 0x4d6684, fogSun: 0xff8442,
-    coverage: 0.60, exposure: 1.3, skyGain: 0.78,
+    coverage: 0.52, exposure: 1.3, skyGain: 0.78,
     warm: 0xffcfa0, cool: 0x5b7699,
   },
 ];
@@ -179,6 +179,8 @@ export class Lighting {
 
     this._adopted = new WeakSet();
     this._adoptFn = (o) => this._adoptObject(o);
+    this._strays = [];
+    this._warnedStray = false;
     this._frame = -1;
     this._envDirty = true;
     this._envTimer = 0;
@@ -218,7 +220,7 @@ export class Lighting {
     this.scene.fog = this.fog;
 
     // House art dials — see Lighting.setStyle().
-    this.setStyle({ hatch: 0.62, grain: 0.85, rim: 0.75, detailNear: 9, detailFar: 30 });
+    this.setStyle({ hatch: 0.62, grain: 0.85, rim: 0.60, detailNear: 9, detailFar: 30 });
     this.setTimeOfDay(this._t);
     if (this.opts.ibl) this._buildEnv();
     if (this.opts.autoAdopt) this.autoAdopt();
@@ -394,11 +396,24 @@ export class Lighting {
     if (!target.traverse) this._adoptObject(target);
   }
 
+  _isMine(o) {
+    for (let p = o; p; p = p.parent) if (p === this.group) return true;
+    return false;
+  }
+
   _adoptObject(o) {
+    // three indexes directionalShadow[] by directional-light order, so a stray global
+    // light added after the rig silently corrupts every cascade. Point and spot lights
+    // (muzzle flashes, lamps, loot beams) are always fine and are left alone.
+    if (o.isLight && !o.isPointLight && !o.isSpotLight && !o.isRectAreaLight && !this._isMine(o)) {
+      this._strays.push(o);
+      return;
+    }
     if (o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || o.isBatchedMesh) {
       if (this.opts.autoShadows && !this._adopted.has(o)) {
         this._adopted.add(o);
-        if (o.userData.noShadow !== true) {
+        if (o.userData.noShadow !== true && o.userData.noGBuffer !== true
+            && !o.layers.isEnabled(LAYER_SKY)) {
           o.receiveShadow = o.userData.noShadowReceive === true ? false : true;
           const heavy = o.isInstancedMesh && o.count > 6000;
           if (!o.castShadow && !heavy && o.userData.noShadowCast !== true) {
@@ -415,7 +430,17 @@ export class Lighting {
 
   /** Walk the scene and pick up anything created since the last pass. */
   autoAdopt() {
+    this._strays.length = 0;
     this.scene.traverse(this._adoptFn);
+    for (let i = 0; i < this._strays.length; i++) {
+      const l = this._strays[i];
+      if (!this._warnedStray) {
+        this._warnedStray = true;
+        console.warn('[Lighting] removed a global light outside the rig:',
+          l.name || l.type, '— drive the sun through installLightRig()/setTimeOfDay() instead.');
+      }
+      l.parent?.remove(l);
+    }
   }
 
   _csmSetup(material) {
