@@ -37,7 +37,8 @@ export class World {
     this.lighting = installLightRig(ctx, {
       timeOfDay: 0.72,
       cascades: 2,
-      shadowMapSize: 1280,
+      shadowMapSize: parseInt(new URLSearchParams(location.search).get('shmap') || '0', 10) || 1280,
+      autoShadows: !location.search.includes('noshadows'),
       shadowDistance: 200,
       shadowSplits: [0.10, 1.0],
       fogScale: 0.92,
