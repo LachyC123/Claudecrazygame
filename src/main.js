@@ -25,6 +25,21 @@ const progress = (p, label) => {
   if (label && hintEl) hintEl.textContent = label;
 };
 
+
+// Canvas ctx.font does NOT trigger font loading — the HUD draws to canvas, so we must
+// explicitly load every face before first paint or text silently falls back.
+async function ensureFonts() {
+  if (!document.fonts) return;
+  const specs = [
+    '400 16px Anton', '400 16px Oswald', '500 16px Oswald', '600 16px Oswald',
+    '700 16px Oswald', '700 16px "Saira Condensed"', '900 16px "Saira Condensed"',
+  ];
+  try {
+    await Promise.all(specs.map((s) => document.fonts.load(s, '0123456789ABCDEFG')));
+    await document.fonts.ready;
+  } catch (e) { console.warn('font load', e); }
+}
+
 async function boot() {
   const captureRequest = getCaptureRequest();
   const container = document.getElementById('app');
@@ -65,6 +80,7 @@ async function boot() {
   ctx.loot = new Loot(ctx);
 
   progress(0.88, 'painting hud…');
+  await ensureFonts();
   ctx.hud = new HUD(ctx);
 
   const engine = new Engine(ctx);
