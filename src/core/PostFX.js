@@ -39,13 +39,12 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { cfg } from './Config.js';
 import { TONEMAP_GLSL } from './Renderer.js';
 import { GBufferPass, InkOutlinePass } from '../render/OutlinePass.js';
-import { installLightRig } from '../render/Lighting.js';
+import { installLightRig, buildRenderProbe } from '../render/Lighting.js';
 
 const FS_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -211,15 +210,15 @@ void main() {
   float zC = texture2D(tGBuffer, vUv).w;
   if (zC <= 1e-4) { gl_FragColor = c; return; }
 
-  // depth-aware 3x3 gather (also upsamples a half-res AO buffer cleanly)
+  // depth-aware 4-tap gather (also upsamples a lower-res AO buffer cleanly)
   float sum = 0.0, wsum = 0.0;
-  for (int y = -1; y <= 1; y++) {
-    for (int x = -1; x <= 1; x++) {
-      vec2 o = vec2(float(x), float(y)) * uAOTexel;
-      vec2 s = texture2D(tAO, vUv + o).xy;
-      float w = exp(-abs(s.y - zC) * 5.0 / max(zC, 1.0));
-      sum += s.x * w; wsum += w;
-    }
+  vec2 o = uAOTexel * 0.75;
+  for (int i = 0; i < 4; i++) {
+    vec2 d = i == 0 ? vec2(-1.0, -1.0) : i == 1 ? vec2(1.0, -1.0)
+           : i == 2 ? vec2(-1.0, 1.0) : vec2(1.0, 1.0);
+    vec2 s = texture2D(tAO, vUv + d * o).xy;
+    float w = exp(-abs(s.y - zC) * 5.0 / max(zC, 1.0));
+    sum += s.x * w; wsum += w;
   }
   float ao = wsum > 0.0 ? sum / wsum : 1.0;
   ao = mix(ao, band3(ao), uBand);
@@ -260,6 +259,176 @@ class AOApplyPass extends Pass {
     this.fsQuad.render(renderer);
   }
   dispose() { this.material.dispose(); this.fsQuad.dispose(); }
+}
+
+/* ============================================================================ */
+/* Selective bloom                                                              */
+/* ============================================================================ */
+/* A three-level threshold/blur chain instead of UnrealBloom: same soft falloff at
+ * roughly a sixth of the fill cost, and the HDR knee is exposed so that only true
+ * emissives (sun disc, muzzle flash, rarity beams) ever bloom. */
+
+const BLOOM_THRESH_FRAG = /* glsl */ `
+precision highp float;
+uniform sampler2D tDiffuse;
+uniform vec2 uTexel;
+uniform float uThreshold;
+uniform float uKnee;
+varying vec2 vUv;
+void main() {
+  vec3 c = texture2D(tDiffuse, vUv + vec2(-1.0, -1.0) * uTexel).rgb
+         + texture2D(tDiffuse, vUv + vec2( 1.0, -1.0) * uTexel).rgb
+         + texture2D(tDiffuse, vUv + vec2(-1.0,  1.0) * uTexel).rgb
+         + texture2D(tDiffuse, vUv + vec2( 1.0,  1.0) * uTexel).rgb;
+  c *= 0.25;
+  float l = max(c.r, max(c.g, c.b));
+  float s = clamp((l - uThreshold) / max(uKnee, 1e-4), 0.0, 1.0);
+  gl_FragColor = vec4(c * s * s, 1.0);
+}
+`;
+
+const BLOOM_BLUR_FRAG = /* glsl */ `
+precision highp float;
+uniform sampler2D tDiffuse;
+uniform vec2 uDir;
+varying vec2 vUv;
+void main() {
+  vec3 c = texture2D(tDiffuse, vUv).rgb * 0.2270270270;
+  c += texture2D(tDiffuse, vUv + uDir * 1.3846153846).rgb * 0.3162162162;
+  c += texture2D(tDiffuse, vUv - uDir * 1.3846153846).rgb * 0.3162162162;
+  c += texture2D(tDiffuse, vUv + uDir * 3.2307692308).rgb * 0.0702702703;
+  c += texture2D(tDiffuse, vUv - uDir * 3.2307692308).rgb * 0.0702702703;
+  gl_FragColor = vec4(c, 1.0);
+}
+`;
+
+const BLOOM_ADD_FRAG = /* glsl */ `
+precision highp float;
+uniform sampler2D t0;
+uniform sampler2D t1;
+uniform sampler2D t2;
+uniform vec3 uTint;
+uniform float uStrength;
+varying vec2 vUv;
+void main() {
+  vec3 c = texture2D(t0, vUv).rgb * 0.50
+         + texture2D(t1, vUv).rgb * 0.32
+         + texture2D(t2, vUv).rgb * 0.18;
+  gl_FragColor = vec4(c * uTint * uStrength, 1.0);
+}
+`;
+
+function bloomRT(w, h) {
+  const rt = new THREE.WebGLRenderTarget(Math.max(2, w), Math.max(2, h), {
+    type: THREE.HalfFloatType, format: THREE.RGBAFormat,
+    minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    depthBuffer: false, stencilBuffer: false,
+  });
+  return rt;
+}
+
+class BloomPass extends Pass {
+  constructor(w, h, opts = {}) {
+    super();
+    this.needsSwap = false;
+    this.strength = opts.strength ?? 0.85;
+    this.threshold = opts.threshold ?? 1.0;
+    this.knee = opts.knee ?? 0.7;
+
+    this.levels = [];
+    for (let i = 0; i < 3; i++) {
+      const d = 4 << i;
+      this.levels.push({ a: bloomRT(w / d, h / d), b: bloomRT(w / d, h / d), d });
+    }
+
+    this.matThresh = new THREE.ShaderMaterial({
+      name: 'BL4.BloomThreshold',
+      uniforms: { tDiffuse: { value: null }, uTexel: { value: new THREE.Vector2() },
+        uThreshold: { value: this.threshold }, uKnee: { value: this.knee } },
+      vertexShader: FS_VERT, fragmentShader: BLOOM_THRESH_FRAG,
+      depthTest: false, depthWrite: false,
+    });
+    this.matBlur = new THREE.ShaderMaterial({
+      name: 'BL4.BloomBlur',
+      uniforms: { tDiffuse: { value: null }, uDir: { value: new THREE.Vector2() } },
+      vertexShader: FS_VERT, fragmentShader: BLOOM_BLUR_FRAG,
+      depthTest: false, depthWrite: false,
+    });
+    this.matAdd = new THREE.ShaderMaterial({
+      name: 'BL4.BloomAdd',
+      uniforms: {
+        t0: { value: this.levels[0].a.texture },
+        t1: { value: this.levels[1].a.texture },
+        t2: { value: this.levels[2].a.texture },
+        uTint: { value: new THREE.Color(opts.tint ?? 0xfff2e2) },
+        uStrength: { value: this.strength },
+      },
+      vertexShader: FS_VERT, fragmentShader: BLOOM_ADD_FRAG,
+      blending: THREE.AdditiveBlending, transparent: true,
+      depthTest: false, depthWrite: false,
+    });
+    this.fsQuad = new FullScreenQuad(this.matThresh);
+    this._w = w; this._h = h;
+  }
+
+  _blur(renderer, src, dst, texelX, texelY, dx, dy) {
+    this.matBlur.uniforms.tDiffuse.value = src.texture;
+    this.matBlur.uniforms.uDir.value.set(dx * texelX, dy * texelY);
+    this.fsQuad.material = this.matBlur;
+    renderer.setRenderTarget(dst);
+    renderer.clear();
+    this.fsQuad.render(renderer);
+  }
+
+  render(renderer, writeBuffer, readBuffer) {
+    const L = this.levels;
+    // The composite blends additively onto readBuffer — autoClear would wipe the
+    // scene out from under it.
+    const oldAutoClear = renderer.autoClear;
+    renderer.autoClear = false;
+    this.matThresh.uniforms.tDiffuse.value = readBuffer.texture;
+    this.matThresh.uniforms.uTexel.value.set(1 / this._w, 1 / this._h);
+    this.matThresh.uniforms.uThreshold.value = this.threshold;
+    this.matThresh.uniforms.uKnee.value = this.knee;
+    this.fsQuad.material = this.matThresh;
+    renderer.setRenderTarget(L[0].a);
+    renderer.clear();
+    this.fsQuad.render(renderer);
+
+    for (let i = 0; i < L.length; i++) {
+      const lv = L[i];
+      const tx = 1 / lv.a.width, ty = 1 / lv.a.height;
+      if (i > 0) {
+        // downsample from the previous level while blurring horizontally
+        this._blur(renderer, L[i - 1].a, lv.b, tx, ty, 1, 0);
+      } else {
+        this._blur(renderer, lv.a, lv.b, tx, ty, 1, 0);
+      }
+      this._blur(renderer, lv.b, lv.a, tx, ty, 0, 1);
+    }
+
+    this.matAdd.uniforms.t0.value = L[0].a.texture;
+    this.matAdd.uniforms.t1.value = L[1].a.texture;
+    this.matAdd.uniforms.t2.value = L[2].a.texture;
+    this.matAdd.uniforms.uStrength.value = this.strength;
+    this.fsQuad.material = this.matAdd;
+    renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
+    this.fsQuad.render(renderer);
+    renderer.autoClear = oldAutoClear;
+  }
+
+  setSize(w, h) {
+    this._w = w; this._h = h;
+    for (const lv of this.levels) {
+      lv.a.setSize(Math.max(2, Math.round(w / lv.d)), Math.max(2, Math.round(h / lv.d)));
+      lv.b.setSize(Math.max(2, Math.round(w / lv.d)), Math.max(2, Math.round(h / lv.d)));
+    }
+  }
+  dispose() {
+    for (const lv of this.levels) { lv.a.dispose(); lv.b.dispose(); }
+    this.matThresh.dispose(); this.matBlur.dispose(); this.matAdd.dispose();
+    this.fsQuad.dispose();
+  }
 }
 
 /* ============================================================================ */
@@ -378,7 +547,7 @@ uniform float uNearGuard;
 varying vec2 vUv;
 ${NOISE_GLSL}
 
-#define DOF_TAPS 12
+#define DOF_TAPS 6
 
 float cocOf(float z) {
   if (z <= 1e-4) return uMaxCoC * 0.30;         // sky sits at infinity
@@ -394,7 +563,7 @@ void main() {
   float zC = texture2D(tGBuffer, vUv).w;
   float cC = cocOf(zC);
   float r = abs(cC);
-  if (r < 0.6) { gl_FragColor = base; return; }
+  if (r < 0.9) { gl_FragColor = base; return; }
 
   float ang = h21(gl_FragCoord.xy) * 6.2831853;
   vec3 acc = base.rgb; float wsum = 1.0;
@@ -567,11 +736,11 @@ class GradePass extends Pass {
       uVignetteSoft: { value: 0.06 },
       uLift: { value: new THREE.Vector3(-0.004, 0.002, 0.014) },
       uGamma: { value: new THREE.Vector3(1.0, 1.0, 1.02) },
-      uGain: { value: new THREE.Vector3(1.05, 1.005, 0.955) },
+      uGain: { value: new THREE.Vector3(1.035, 1.005, 0.975) },
       uShadowTint: { value: new THREE.Color(0.62, 0.78, 0.92) },
       uHighlightTint: { value: new THREE.Color(1.06, 1.0, 0.90) },
       uTintAmount: { value: 0.55 },
-      uSaturation: { value: 1.16 },
+      uSaturation: { value: 1.08 },
       uContrast: { value: 1.06 },
       uToe: { value: 0.16 },
       uHitFlash: { value: 0 },
@@ -615,7 +784,7 @@ export class PostFX {
     // if the world module has not adopted the API yet.
     this.lighting = installLightRig(ctx, off.has('sky') ? { sky: false, ibl: false } : undefined);
 
-    this.renderScale = cfg.renderScale ?? (cfg.capture ? 1.0 : (cfg.quality === 'ultra' ? 1.15 : 1.0));
+    this.renderScale = cfg.renderScale ?? (cfg.capture ? 1.25 : (cfg.quality === 'ultra' ? 1.15 : 1.0));
     renderer.getDrawingBufferSize(_size);
     const w = Math.max(2, Math.round(_size.x * this.renderScale));
     const h = Math.max(2, Math.round(_size.y * this.renderScale));
@@ -643,8 +812,8 @@ export class PostFX {
 
     // 4. ambient occlusion
     if (fx.ssao !== false && !off.has('ao') && this.gbuffer) {
-      const aoScale = cfg.capture ? 1.0 : 0.65;
-      this.ao = new AOComputePass(this.gbuffer, camera, w, h, cfg.capture ? 16 : 12, aoScale);
+      const aoScale = cfg.capture ? 0.55 : 0.5;
+      this.ao = new AOComputePass(this.gbuffer, camera, w, h, cfg.capture ? 10 : 8, aoScale);
       this.aoApply = new AOApplyPass(this.ao, this.gbuffer);
       this.composer.addPass(this.ao);
       this.composer.addPass(this.aoApply);
@@ -652,7 +821,7 @@ export class PostFX {
 
     // 5. selective bloom — HDR threshold, so only emissives and the sun blow out
     if (fx.bloom !== false && !off.has('bloom')) {
-      this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.62, 0.72, 1.0);
+      this.bloom = new BloomPass(w, h, { strength: 0.9, threshold: 1.0, knee: 0.75 });
       this.composer.addPass(this.bloom);
     }
 
@@ -685,6 +854,12 @@ export class PostFX {
     this.output = new OutputPass();
     this.composer.addPass(this.output);
 
+    // ---- dev harness: stand-in geometry when the world is not ready yet -------
+    if (typeof location !== 'undefined' && location.search.includes('rendertest')) {
+      buildRenderProbe(scene);
+      this.lighting.autoAdopt();
+    }
+
     // ---- optional per-pass profiler (?pfxstats) --------------------------------
     if (typeof location !== 'undefined' && location.search.includes('pfxstats')) this._instrument();
 
@@ -695,6 +870,20 @@ export class PostFX {
     this._focusTarget = 30;
     this._hitFlash = 0;
     this._lowHealth = 0;
+    this.stats = { cpuMs: 0, wallMs: 0, frames: 0 };
+    this._lastCall = 0;
+
+    // Capture warm-up staging. The harness renders N throwaway frames before it
+    // signals READY; only the first few (to compile every post shader) and the last
+    // few (the ones that actually decide the pixels) need the whole stack. The rest
+    // render the scene straight to the canvas, which still exercises material
+    // compilation. Nothing here runs outside capture mode.
+    this._capFrame = 0;
+    this._capTotal = ctx.captureRequest?.frames ?? 45;
+    this._staged = !!cfg.capture;
+    this._warmRT = this._staged
+      ? new THREE.WebGLRenderTarget(320, 180, { type: THREE.HalfFloatType, depthBuffer: true })
+      : null;
 
     this._onResize = () => this.resize();
     addEventListener('resize', this._onResize);
@@ -730,8 +919,8 @@ export class PostFX {
   setBloom({ strength, radius, threshold } = {}) {
     if (!this.bloom) return;
     if (strength !== undefined) this.bloom.strength = strength;
-    if (radius !== undefined) this.bloom.radius = radius;
     if (threshold !== undefined) this.bloom.threshold = threshold;
+    if (radius !== undefined) this.bloom.knee = 0.4 + radius * 0.6;
   }
 
   setOutline(p) { this.ink?.setParams(p); return this; }
@@ -808,7 +997,24 @@ export class PostFX {
     g.uVignette.value = 0.42 + this._ads * 0.22;
     g.uCA.value = (cfg.postfx?.chromatic === false ? 0 : 1) * (1.0 + this._ads * 0.5);
 
+    if (this._staged) {
+      const f = this._capFrame++;
+      if (f >= 2 && f < this._capTotal - 8) {
+        const r = this.ctx.renderer;
+        r.setRenderTarget(this._warmRT);
+        r.render(this.ctx.scene, this.ctx.camera);
+        r.setRenderTarget(null);
+        return;
+      }
+    }
+
+    const _t0 = performance.now();
     this.composer.render(d);
+    const _t1 = performance.now();
+    this.stats.cpuMs = this.stats.cpuMs * 0.9 + (_t1 - _t0) * 0.1;
+    this.stats.wallMs = this._lastCall ? this.stats.wallMs * 0.9 + (_t0 - this._lastCall) * 0.1 : 0;
+    this._lastCall = _t1;
+    this.stats.frames++;
   }
 
   /** Wraps every pass's render() with a CPU timer. Results in window.__PFX_STATS__. */
@@ -835,6 +1041,8 @@ export class PostFX {
     this.ao?.dispose();
     this.aoApply?.dispose();
     this.motionBlur?.dispose();
+    this._warmRT?.dispose();
+    this.bloom?.dispose();
     this.dof?.dispose();
     this.grade?.dispose();
     this.composer?.dispose?.();

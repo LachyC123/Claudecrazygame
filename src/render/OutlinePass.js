@@ -313,38 +313,45 @@ void main() {
   vec4 gR = gb(vUv + vec2(r.x, 0.0));
   vec4 gU = gb(vUv + vec2(0.0, r.y));
   vec4 gD = gb(vUv - vec2(0.0, r.y));
+
+  float zMin = min(min(zC, gL.w), min(min(gR.w, gU.w), gD.w));
+  vec3 nC = normalize(gC.xyz + 1e-6);
+
+  // --- cheap 4-tap cross first ------------------------------------------------
+  float iC = 1.0 / zC;
+  float lap = abs(1.0 / gL.w + 1.0 / gR.w - 2.0 * iC)
+            + abs(1.0 / gU.w + 1.0 / gD.w - 2.0 * iC);
+  float rel = lap * zMin;
+
+  float ne = 0.0;
+  ne = max(ne, 1.0 - dot(nC, normalize(gL.xyz + 1e-6)));
+  ne = max(ne, 1.0 - dot(nC, normalize(gR.xyz + 1e-6)));
+  ne = max(ne, 1.0 - dot(nC, normalize(gU.xyz + 1e-6)));
+  ne = max(ne, 1.0 - dot(nC, normalize(gD.xyz + 1e-6)));
+
+  float dTh = uDepthThresh * (1.0 + zMin * 0.0035);
+  float nTh = uNormalThresh * (1.0 + zC * uNormalFalloff);
+
+  // Flat interior: skip the four diagonal taps entirely. On a typical frame this is
+  // most of the screen, and it costs nothing in line quality.
+  if (rel < dTh * 0.45 && ne < nTh * 0.45) { gl_FragColor = sc; return; }
+
+  // --- diagonals sharpen corners and thicken the contour ----------------------
   vec4 gA = gb(vUv + vec2(rd.x, rd.y));
   vec4 gB = gb(vUv + vec2(-rd.x, rd.y));
   vec4 gE = gb(vUv + vec2(rd.x, -rd.y));
   vec4 gF = gb(vUv + vec2(-rd.x, -rd.y));
+  zMin = min(zMin, min(min(gA.w, gB.w), min(gE.w, gF.w)));
+  rel = (lap + (abs(1.0 / gA.w + 1.0 / gF.w - 2.0 * iC)
+              + abs(1.0 / gB.w + 1.0 / gE.w - 2.0 * iC)) * 0.7) * zMin;
 
-  float zMin = min(min(min(zC, gL.w), min(gR.w, gU.w)), min(min(gD.w, gA.w), min(gB.w, gE.w)));
-  zMin = min(zMin, gF.w);
-
-  // --- depth edge: 2nd derivative of 1/z (flat for any plane) ----------------
-  float iC = 1.0 / zC;
-  float lap = abs(1.0 / gL.w + 1.0 / gR.w - 2.0 * iC)
-            + abs(1.0 / gU.w + 1.0 / gD.w - 2.0 * iC);
-  float lapD = abs(1.0 / gA.w + 1.0 / gF.w - 2.0 * iC)
-             + abs(1.0 / gB.w + 1.0 / gE.w - 2.0 * iC);
-  float rel = (lap + lapD * 0.7) * zMin;
-
-  float dTh = uDepthThresh * (1.0 + zMin * 0.0035);
-  float edgeD = smoothstep(dTh, dTh + uDepthKnee, rel);
-
-  // --- normal edge: interior creases -----------------------------------------
-  vec3 nC = normalize(gC.xyz + 1e-6);
-  float ne = 0.0;
-  ne = max(ne, 1.0 - dot(nC, normalize(gL.xyz + 1e-6)) * step(gL.w, FAR_SENTINEL - 1.0));
-  ne = max(ne, 1.0 - dot(nC, normalize(gR.xyz + 1e-6)) * step(gR.w, FAR_SENTINEL - 1.0));
-  ne = max(ne, 1.0 - dot(nC, normalize(gU.xyz + 1e-6)) * step(gU.w, FAR_SENTINEL - 1.0));
-  ne = max(ne, 1.0 - dot(nC, normalize(gD.xyz + 1e-6)) * step(gD.w, FAR_SENTINEL - 1.0));
   ne = max(ne, (1.0 - dot(nC, normalize(gA.xyz + 1e-6))) * 0.85);
   ne = max(ne, (1.0 - dot(nC, normalize(gF.xyz + 1e-6))) * 0.85);
   ne = max(ne, (1.0 - dot(nC, normalize(gB.xyz + 1e-6))) * 0.85);
   ne = max(ne, (1.0 - dot(nC, normalize(gE.xyz + 1e-6))) * 0.85);
 
-  float nTh = uNormalThresh * (1.0 + zC * uNormalFalloff);
+  dTh = uDepthThresh * (1.0 + zMin * 0.0035);
+  float edgeD = smoothstep(dTh, dTh + uDepthKnee, rel);
   float edgeN = smoothstep(nTh, nTh + uNormalKnee, ne) * uNormalWeight * uInterior;
   if (zC >= FAR_SENTINEL - 1.0) edgeN = 0.0;
 
@@ -373,18 +380,18 @@ void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(
 `;
 
 const INK_DEFAULTS = {
-  ink: 0x0a0a0e,
+  ink: 0x07070a,
   strength: 1.0,
-  widthNear: 2.6,
-  widthFar: 1.05,
+  widthNear: 3.2,
+  widthFar: 1.2,
   widthDist: [4.0, 120.0],
-  depthThresh: 0.028,
+  depthThresh: 0.022,
   depthKnee: 0.055,
-  normalThresh: 0.30,
+  normalThresh: 0.26,
   normalKnee: 0.30,
   normalWeight: 0.92,
   normalFalloff: 0.010,
-  fade: [190.0, 430.0],
+  fade: [230.0, 520.0],
   jitter: 0.30,
   variation: 0.42,
   inkPooling: 0.55,

@@ -63,7 +63,9 @@ export function createRenderer(container) {
 
   // ---- shadows ---------------------------------------------------------------
   renderer.shadowMap.enabled = !!cfg.shadows;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // Crisper than PCFSoft and materially cheaper — and hard shadow edges are the
+  // correct look for a cel-shaded game anyway. Softening comes from normalBias + AO.
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   renderer.shadowMap.autoUpdate = true;
 
   renderer.autoClear = true;

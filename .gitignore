@@ -3,3 +3,5 @@ dist/
 shots/
 .vite/
 *.log
+.probe.mjs
+_scratch/

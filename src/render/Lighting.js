@@ -49,9 +49,9 @@ const KEYS = [
     sunColor: 0xffa863, sunI: 1.35, sunDisc: 9.0, sunSize: 0.036,
     zenith: 0x27506f, horizon: 0xecc39b, ground: 0x6a5a49,
     cloudLit: 0xffd2a4, cloudShadow: 0x5e6f8e, inscatter: 0xff9d55,
-    hemiSky: 0x8aa8c6, hemiGnd: 0x4b3c2e, hemiI: 0.70, ambGain: 0.95,
+    hemiSky: 0x8aa8c6, hemiGnd: 0x4b3c2e, hemiI: 1.02, ambGain: 1.18,
     fogDensity: 0.0038, fogHorizon: 0xd8b491, fogZenith: 0x5d7b98, fogSun: 0xff9f58,
-    coverage: 0.42, exposure: 1.22, skyGain: 0.85,
+    coverage: 0.50, exposure: 1.22, skyGain: 0.85,
     warm: 0xffdcb4, cool: 0x6d8bb0,
   },
   { // 0.22 — morning
@@ -59,9 +59,9 @@ const KEYS = [
     sunColor: 0xffe6bc, sunI: 3.05, sunDisc: 20.0, sunSize: 0.029,
     zenith: 0x2b6b95, horizon: 0xd9d6c4, ground: 0x9d8b6c,
     cloudLit: 0xfff5e6, cloudShadow: 0x92a9c2, inscatter: 0xffcf96,
-    hemiSky: 0xa8c7e0, hemiGnd: 0x6b5a42, hemiI: 1.02, ambGain: 1.0,
+    hemiSky: 0xa8c7e0, hemiGnd: 0x6b5a42, hemiI: 1.55, ambGain: 1.35,
     fogDensity: 0.0027, fogHorizon: 0xcfd8ce, fogZenith: 0x7ea6be, fogSun: 0xffd6a2,
-    coverage: 0.44, exposure: 1.06, skyGain: 1.0,
+    coverage: 0.52, exposure: 1.06, skyGain: 1.0,
     warm: 0xfff1da, cool: 0x8db4d6,
   },
   { // 0.45 — noon
@@ -69,9 +69,9 @@ const KEYS = [
     sunColor: 0xfff8ec, sunI: 3.55, sunDisc: 26.0, sunSize: 0.026,
     zenith: 0x2f7aa6, horizon: 0xd8e0dc, ground: 0xab9878,
     cloudLit: 0xfffdf6, cloudShadow: 0x9cb2c8, inscatter: 0xffe3bb,
-    hemiSky: 0xb5d3ea, hemiGnd: 0x77664c, hemiI: 1.12, ambGain: 1.05,
+    hemiSky: 0xb5d3ea, hemiGnd: 0x77664c, hemiI: 1.62, ambGain: 1.38,
     fogDensity: 0.0023, fogHorizon: 0xd3ddd8, fogZenith: 0x86b0c8, fogSun: 0xffe6c0,
-    coverage: 0.46, exposure: 1.0, skyGain: 1.06,
+    coverage: 0.54, exposure: 1.0, skyGain: 1.06,
     warm: 0xfff6e8, cool: 0x93bcdd,
   },
   { // 0.70 — afternoon
@@ -79,9 +79,9 @@ const KEYS = [
     sunColor: 0xffeccb, sunI: 3.20, sunDisc: 22.0, sunSize: 0.028,
     zenith: 0x2d6f9c, horizon: 0xdcd3bd, ground: 0xa48d67,
     cloudLit: 0xfff6e4, cloudShadow: 0x93a6c0, inscatter: 0xffd39c,
-    hemiSky: 0xa9c9e2, hemiGnd: 0x6f5c42, hemiI: 1.0, ambGain: 1.0,
+    hemiSky: 0xa9c9e2, hemiGnd: 0x6f5c42, hemiI: 1.52, ambGain: 1.32,
     fogDensity: 0.0028, fogHorizon: 0xd0d6c9, fogZenith: 0x7ea6c0, fogSun: 0xffd8a4,
-    coverage: 0.47, exposure: 1.06, skyGain: 1.0,
+    coverage: 0.55, exposure: 1.06, skyGain: 1.0,
     warm: 0xfff0d6, cool: 0x8ab0d4,
   },
   { // 0.88 — golden hour
@@ -89,9 +89,9 @@ const KEYS = [
     sunColor: 0xffc078, sunI: 2.35, sunDisc: 15.0, sunSize: 0.033,
     zenith: 0x2a5f8c, horizon: 0xefc192, ground: 0x8a6f4c,
     cloudLit: 0xffdfb0, cloudShadow: 0x77809e, inscatter: 0xffab5e,
-    hemiSky: 0x94b0d0, hemiGnd: 0x5d4733, hemiI: 0.86, ambGain: 0.98,
+    hemiSky: 0x94b0d0, hemiGnd: 0x5d4733, hemiI: 1.25, ambGain: 1.22,
     fogDensity: 0.0034, fogHorizon: 0xe0bd93, fogZenith: 0x6b8fae, fogSun: 0xffb469,
-    coverage: 0.50, exposure: 1.14, skyGain: 0.94,
+    coverage: 0.58, exposure: 1.14, skyGain: 0.94,
     warm: 0xffe0ae, cool: 0x7392b8,
   },
   { // 1.00 — dusk
@@ -99,9 +99,9 @@ const KEYS = [
     sunColor: 0xff8e4a, sunI: 1.15, sunDisc: 8.0, sunSize: 0.038,
     zenith: 0x203f63, horizon: 0xe09a6a, ground: 0x5d4a3a,
     cloudLit: 0xffb887, cloudShadow: 0x50597a, inscatter: 0xff7f42,
-    hemiSky: 0x6d88ab, hemiGnd: 0x3e3226, hemiI: 0.62, ambGain: 0.92,
+    hemiSky: 0x6d88ab, hemiGnd: 0x3e3226, hemiI: 0.92, ambGain: 1.15,
     fogDensity: 0.0042, fogHorizon: 0xcb9670, fogZenith: 0x4d6684, fogSun: 0xff8442,
-    coverage: 0.52, exposure: 1.3, skyGain: 0.78,
+    coverage: 0.60, exposure: 1.3, skyGain: 0.78,
     warm: 0xffcfa0, cool: 0x5b7699,
   },
 ];
@@ -182,13 +182,15 @@ export class Lighting {
     this._frame = -1;
     this._envDirty = true;
     this._envTimer = 0;
+    this._captureMode = !!cfg.capture;
+    this._shadowFrames = 0;
     this._t = this.opts.timeOfDay;
 
     if (this.opts.takeover) this._removeLegacyLights();
 
     // ---- sky ------------------------------------------------------------------
     if (this.opts.sky) {
-      this.sky = new Sky();
+      this.sky = new Sky({ renderer: this.renderer });
       this.sky.addTo(this.scene, this.camera);
       this.scene.background = null;
     }
@@ -215,6 +217,8 @@ export class Lighting {
     this.fog = new THREE.FogExp2(0xcfd8ce, 0.0027);
     this.scene.fog = this.fog;
 
+    // House art dials — see Lighting.setStyle().
+    this.setStyle({ hatch: 0.62, grain: 0.85, rim: 0.75, detailNear: 9, detailFar: 30 });
     this.setTimeOfDay(this._t);
     if (this.opts.ibl) this._buildEnv();
     if (this.opts.autoAdopt) this.autoAdopt();
@@ -472,6 +476,13 @@ export class Lighting {
       this.csm.updateUniforms();
     }
 
+    // Capture poses are frozen by contract, so the cascades only need rasterising
+    // until they have settled. Saves three 2k shadow renders on every warm frame.
+    if (this._captureMode) {
+      this._shadowFrames++;
+      this.renderer.shadowMap.autoUpdate = this._shadowFrames < 3;
+    }
+
     if (this._envDirty) {
       this._envTimer += dt;
       if (this._envTimer > 0.25) { this._envTimer = 0; this._buildEnv(); }
@@ -494,4 +505,81 @@ export class Lighting {
 export function installLightRig(ctx, opts) {
   if (ctx.lighting) return ctx.lighting;
   return new Lighting(ctx, opts);
+}
+
+/* ---------------------------------------------------------------------------- */
+/* Dev harness                                                                   */
+/* ---------------------------------------------------------------------------- */
+
+/**
+ * Drops a small set of cel-shaded stand-in forms into the scene so the light rig,
+ * shadow cascades, ambient occlusion and ink outlines can be judged without waiting
+ * on the world module. Dev only — PostFX builds it when the URL carries ?rendertest.
+ */
+export function buildRenderProbe(scene, seedIn = 1337) {
+  let seed = seedIn >>> 0;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+
+  const group = new THREE.Group();
+  group.name = 'RenderProbe';
+
+  const rock = (r, detail) => {
+    const g = new THREE.IcosahedronGeometry(r, detail);
+    const pos = g.attributes.position;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i);
+      const n = Math.sin(v.x * 1.7 + 3.1) * Math.cos(v.z * 1.3) * 0.5 + Math.sin(v.y * 2.9) * 0.3;
+      v.multiplyScalar(1 + n * 0.20 + (rnd() - 0.5) * 0.08);
+      pos.setXYZ(i, v.x, v.y * 0.82, v.z);
+    }
+    g.computeVertexNormals();
+    return g;
+  };
+
+  const matRock = new THREE.MeshStandardMaterial({ color: 0x9a7c58, roughness: 0.95, flatShading: true });
+  const matRock2 = new THREE.MeshStandardMaterial({ color: 0x7d6a55, roughness: 0.92, flatShading: true });
+  const matMetal = new THREE.MeshStandardMaterial({ color: 0x6d7a80, roughness: 0.42, metalness: 0.75 });
+  const matPaint = new THREE.MeshStandardMaterial({ color: 0xc2452e, roughness: 0.6 });
+
+  for (let i = 0; i < 14; i++) {
+    const r = 1.2 + rnd() * 5.5;
+    const m = new THREE.Mesh(rock(r, r > 4 ? 2 : 1), rnd() > 0.5 ? matRock : matRock2);
+    const a = rnd() * Math.PI * 2;
+    const d = 8 + rnd() * 52;
+    m.position.set(4 - Math.sin(0.32) * d + Math.cos(a) * 6, r * 0.45, 40 - Math.cos(0.32) * d + Math.sin(a) * 8);
+    m.rotation.y = rnd() * 6.28;
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+  }
+
+  // mid-ground mesa
+  const mesa = new THREE.Mesh(rock(14, 2), matRock);
+  mesa.position.set(-46, 4, -34);
+  mesa.scale.set(1.5, 2.2, 1.5);
+  mesa.castShadow = mesa.receiveShadow = true;
+  group.add(mesa);
+
+  // crates + a pole: hard edges to prove the interior-crease outlines
+  for (let i = 0; i < 5; i++) {
+    const s = 0.7 + rnd() * 0.6;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), i % 2 ? matMetal : matPaint);
+    m.position.set(2 + (rnd() - 0.5) * 5, s * 0.5, 32 - i * 1.6 + (rnd() - 0.5) * 2);
+    m.rotation.y = rnd() * 1.5;
+    m.castShadow = m.receiveShadow = true;
+    group.add(m);
+  }
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.14, 6, 8), matMetal);
+  pole.position.set(-1.6, 3, 33);
+  pole.castShadow = pole.receiveShadow = true;
+  group.add(pole);
+
+  // character stand-in
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 1.0, 6, 12), matPaint);
+  body.position.set(3.4, 1.0, 28);
+  body.castShadow = body.receiveShadow = true;
+  group.add(body);
+
+  scene.add(group);
+  return group;
 }

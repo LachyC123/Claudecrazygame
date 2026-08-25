@@ -41,14 +41,14 @@
  *
  *   bands        (number, default 3)     diffuse quantization steps
  *   bandSoftness (number, default 0.035) 0 = razor terminator, 0.15 = airbrushed
- *   bandFloor    (number, default 0.06)  darkest band multiplier (0 = pure ambient)
+ *   bandFloor    (number, default 0.24)  darkest band multiplier (0 = pure ambient)
  *   warm         (hex,  default 0xfff2dc) tint of the lit bands
  *   cool         (hex,  default 0x8fb6d8) tint of the shadow band
  *   rimColor     (hex,  default 0xffcf95)
- *   rimPower     (number, default 2.6)
- *   rimStrength  (number, default 0.55)   0 disables rim
+ *   rimPower     (number, default 3.6)
+ *   rimStrength  (number, default 0.32)   0 disables rim
  *   rimRange     (number, default 90)     metres at which rim has faded out
- *   hatch        (number, default 1.0)    cross-hatch amount in shadow (0 disables)
+ *   hatch        (number, default 0.7)    cross-hatch amount in shadow (0 disables)
  *   hatchScale   (number, default 5.0)    lines per world metre
  *   grain        (number, default 1.0)    painterly albedo grain (0 disables)
  *   grainScale   (number, default 1.6)
@@ -224,9 +224,11 @@ const CEL_VERT_BODY = /* glsl */ `
 const CEL_GRAIN = /* glsl */ `
 {
   float gAmt = clamp(uCelGrain * uCelGrainGlobal, 0.0, 2.0);
-  if (gAmt > 0.001) {
-    float gFade = 1.0 - smoothstep(uCelDetailFade.x * 2.2, uCelDetailFade.y * 1.6,
-                                   distance(cameraPosition, vCelWorldPos));
+  float gFade = 1.0 - smoothstep(uCelDetailFade.x * 2.2, uCelDetailFade.y * 1.6,
+                                 distance(cameraPosition, vCelWorldPos));
+  // Skip the whole multi-octave noise once the grain has faded out — on a wide vista
+  // most of the frame is past the fade distance, and this is the hottest chunk here.
+  if (gAmt > 0.001 && gFade > 0.004) {
     vec3 gp = vCelWorldPos * uCelGrainScale;
     float n1 = celNoise3(gp);
     float n2 = celNoise3(gp * 3.71 + 13.7);
@@ -267,7 +269,9 @@ const CEL_LIGHT = /* glsl */ `
   float qf = mix(uCelBandFloor, 1.0, q);
   vec3  ramp = mix(uCelCool, uCelWarm, smoothstep(0.02, 0.85, q));
 
-  float hatch = celHatchAmount(vCelWorldPos, celNw, gl_FragCoord.xy, celFade);
+  float hatch = 1.0;
+  if (celFade > 0.004 && uCelHatch * uCelHatchGlobal > 0.001)
+    hatch = celHatchAmount(vCelWorldPos, celNw, gl_FragCoord.xy, celFade);
   float hatchLit = mix(hatch, 1.0, smoothstep(0.20, 0.72, q));
 
   reflectedLight.directDiffuse =
@@ -289,11 +293,15 @@ const CEL_LIGHT = /* glsl */ `
   // ---- 4. fresnel rim --------------------------------------------------------
   float rimAmt = uCelRimStrength * uCelRimGlobal;
   if (rimAmt > 0.001) {
-    float fres = pow(1.0 - clamp(dot(celNw, celV), 0.0, 1.0), uCelRimPower);
+    float ndv = clamp(dot(celNw, celV), 0.0, 1.0);
+    // A hard grazing gate: on flat-shaded geometry a plain fresnel lights up whole
+    // facets and the model reads as a wireframe. Only near-perpendicular surfaces —
+    // i.e. actual silhouette edges — are allowed to catch the rim.
+    float fres = pow(1.0 - ndv, uCelRimPower) * smoothstep(0.46, 0.10, ndv);
     float back = clamp(dot(celNw, -uCelSunDir) * 0.5 + 0.5, 0.0, 1.0);
     float rim = fres * rimAmt;
-    rim *= mix(1.0, 0.34, smoothstep(0.30, 0.92, q));          // strongest in shadow
-    rim *= mix(0.45, 1.35, back);                              // strongest when backlit
+    rim *= mix(1.0, 0.45, smoothstep(0.30, 0.92, q));          // strongest in shadow
+    rim *= mix(0.35, 1.30, back);                              // strongest when backlit
     rim *= 1.0 - smoothstep(uCelRimRange * 0.45, uCelRimRange, celDist);
     totalEmissiveRadiance += uCelRimColor * rim *
         mix(vec3(1.0), diffuseColor.rgb * 1.6 + 0.25, 0.45);
@@ -328,14 +336,14 @@ function celUniformsFor(o = {}) {
   return {
     uCelBands:      { value: o.bands ?? 3.0 },
     uCelBandSoft:   { value: o.bandSoftness ?? 0.035 },
-    uCelBandFloor:  { value: o.bandFloor ?? 0.06 },
+    uCelBandFloor:  { value: o.bandFloor ?? 0.24 },
     uCelWarm:       { value: _c(o.warm ?? 0xfff2dc) },
-    uCelCool:       { value: _c(o.cool ?? 0x8fb6d8) },
+    uCelCool:       { value: _c(o.cool ?? 0x9dc0dd) },
     uCelRimColor:   { value: _c(o.rimColor ?? 0xffcf95) },
-    uCelRimPower:   { value: o.rimPower ?? 2.6 },
-    uCelRimStrength:{ value: o.rimStrength ?? 0.55 },
+    uCelRimPower:   { value: o.rimPower ?? 3.6 },
+    uCelRimStrength:{ value: o.rimStrength ?? 0.32 },
     uCelRimRange:   { value: o.rimRange ?? 90.0 },
-    uCelHatch:      { value: o.hatch ?? 1.0 },
+    uCelHatch:      { value: o.hatch ?? 0.7 },
     uCelHatchScale: { value: o.hatchScale ?? 5.0 },
     uCelGrain:      { value: o.grain ?? 1.0 },
     uCelGrainScale: { value: o.grainScale ?? 1.6 },
