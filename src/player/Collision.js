@@ -37,6 +37,8 @@ const _t1 = new THREE.Vector3();
 const _t2 = new THREE.Vector3();
 const _t3 = new THREE.Vector3();
 const _faceN = new THREE.Vector3();
+const _su0 = new THREE.Vector3();
+const _su1 = new THREE.Vector3();
 const _euler = new THREE.Euler();
 
 const TYPE_BOX = 0, TYPE_SPHERE = 1, TYPE_CAPSULE = 2, TYPE_CYL = 3;
@@ -499,10 +501,10 @@ export class Collision {
         this.probeSurface = s.surface;
         if (outNormal) {
           // finite-difference the shape surface for a proper normal
-          closestOnShape(s, x + 0.12, top + 2, z, _t2);
-          closestOnShape(s, x, top + 2, z + 0.12, _t3);
-          _t2.sub(_cp); _t3.sub(_cp);
-          outNormal.crossVectors(_t3, _t2).normalize();
+          closestOnShape(s, x + 0.12, top + 2, z, _su0);
+          closestOnShape(s, x, top + 2, z + 0.12, _su1);
+          _su0.sub(_cp); _su1.sub(_cp);
+          outNormal.crossVectors(_su1, _su0).normalize();
           if (outNormal.y < 0) outNormal.negate();
           if (!Number.isFinite(outNormal.y) || outNormal.y < 0.2) outNormal.set(0, 1, 0);
         }
@@ -566,35 +568,40 @@ export class Collision {
       const gotX = pos.x - _t1.x, gotZ = pos.z - _t1.z;
       const got = Math.sqrt(gotX * gotX + gotZ * gotZ);
       if (got < wantLen * 0.92) {
-        // remember attempt #1
+        // Remember the blocked attempt, then look for a tread to climb.
         _t3.copy(pos);
         const v1x = vel.x, v1y = vel.y, v1z = vel.z;
 
-        pos.copy(_t1); vel.copy(_t2);
-        const step = this.stepHeight;
-        pos.y += step;
-        this.depenetrate(pos, radius, height, null, res, 2);
-        _t0.set(delta.x, 0, delta.z);
-        const res2 = _stepRes; res2.reset();
-        this.slide(pos, _t0, radius, height, vel, res2);
-        // settle back down onto whatever we stepped onto
-        _t0.set(0, -(step + 0.06), 0);
-        this.slide(pos, _t0, radius, height, vel, res2);
-
-        const nx = pos.x - _t1.x, nz = pos.z - _t1.z;
-        const climbed = Math.sqrt(nx * nx + nz * nz);
-        if (res2.grounded && climbed > got + 0.004 && pos.y <= _t1.y + step + 0.02) {
-          res.grounded = true;
-          res.groundNormal.copy(res2.groundNormal);
-          res.groundY = res2.groundY;
-          res.groundSurface = res2.groundSurface;
-          res.hitWall = res2.hitWall;
-          res.wallNormal.copy(res2.wallNormal);
-          res.stepped = pos.y - _t1.y;
-          vel.y = Math.max(vel.y, 0);
-        } else {
-          pos.copy(_t3); vel.set(v1x, v1y, v1z);
+        // Sweeping a capsule downward onto a ledge catches its bottom sphere on
+        // the edge and pushes it back out, so instead probe the surface just
+        // ahead and lift the capsule straight onto it before re-running the move.
+        const inv = 1 / wantLen;
+        const px = _t1.x + wantX * inv * (radius + 0.16);
+        const pz = _t1.z + wantZ * inv * (radius + 0.16);
+        const top = this.surfaceUnder(px, pz, _t1.y + this.stepHeight, _t1.y + 0.025, _stepN);
+        let took = false;
+        if (Number.isFinite(top) && top > _t1.y + 0.02 && _stepN.y >= this.groundCos) {
+          pos.set(_t1.x, top + 0.03, _t1.z);
+          if (this.capsuleFree(pos, radius, height, 0.05)) {
+            vel.set(v1x, Math.max(0, v1y), v1z);
+            const res2 = _stepRes; res2.reset();
+            _t0.set(delta.x, 0, delta.z);
+            this.slide(pos, _t0, radius, height, vel, res2);
+            const nx = pos.x - _t1.x, nz = pos.z - _t1.z;
+            if (Math.sqrt(nx * nx + nz * nz) > got + 0.002) {
+              took = true;
+              res.grounded = true;
+              res.groundNormal.copy(res2.grounded ? res2.groundNormal : _stepN);
+              res.groundY = pos.y;
+              res.groundSurface = res2.grounded ? res2.groundSurface : this.probeSurface;
+              res.hitWall = res2.hitWall;
+              res.wallNormal.copy(res2.wallNormal);
+              res.stepped = pos.y - _t1.y;
+              if (vel.y < 0) vel.y = 0;
+            }
+          }
         }
+        if (!took) { pos.copy(_t3); vel.set(v1x, v1y, v1z); }
       }
     }
     this.stats.contacts = res.contacts;
@@ -659,4 +666,5 @@ export class Collision {
 }
 
 const _stepRes = new MoveResult();
+const _stepN = new THREE.Vector3(0, 1, 0);
 const _snapRes = new MoveResult();
