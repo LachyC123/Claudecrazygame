@@ -177,8 +177,8 @@ function mesaAt(m, x, z) {
   const t = 1 - d / rr;
   if (t <= 0) return 0;
   // steep terraced flank over the outer band, plateau inside
-  let p = smoothstep(0, 0.34, t);
-  p = terrace(p, m.t) * 0.82 + p * 0.18;
+  let p = smoothstep(0, 0.26, t);
+  p = terrace(p, m.t) * 0.90 + p * 0.10;
   // broken plateau top
   const top = (fbm2(x * 0.028, z * 0.028, 3, m.s + 3) - 0.5) * 5.5;
   return m.h * p + top * smoothstep(0.10, 0.55, p);
@@ -197,10 +197,10 @@ function distantRidge(x, z) {
   const r = Math.hypot(x, z);
   const m = smoothstep(290, 620, r);
   if (m <= 0) return 0;
-  const rg = ridged2(x * 0.00155, z * 0.00155, 5, 7);
-  const big = ridged2(x * 0.00052, z * 0.00052, 3, 19);
-  const band = smoothstep(0.18, 0.85, rg * 0.6 + big * 0.7);
-  return m * (band * 210 * (0.35 + 0.65 * big) + m * m * 46);
+  const rg = ridged2(x * 0.00135, z * 0.00135, 5, 7);
+  const big = ridged2(x * 0.00046, z * 0.00046, 3, 19);
+  const band = smoothstep(0.14, 0.80, rg * 0.62 + big * 0.72);
+  return m * (band * 320 * (0.30 + 0.70 * big) + m * m * 70);
 }
 
 /** Everything except the road, so the road can flatten against it. */
@@ -273,7 +273,7 @@ export function canvasOf(size) {
   return c;
 }
 
-export function finishTex(canvas, { srgb = true, repeat = 1, aniso = 8 } = {}) {
+export function finishTex(canvas, { srgb = true, repeat = 1, aniso = 1 } = {}) {
   const t = new THREE.CanvasTexture(canvas);
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
   t.repeat.set(repeat, repeat);
@@ -380,13 +380,13 @@ export function heightToNormal(height, N, strength = 2.4) {
 
 function makeDetailTex(assets) {
   return assets.get('ter.detail', () => {
-    const N = 512;
+    const N = 256;
     const c = canvasOf(N), g = c.getContext('2d');
     const img = g.createImageData(N, N), d = img.data;
-    const crackW = tileWorley(N, 11, 3);
-    const crackW2 = tileWorley(N, 26, 17);
+    const crackW = tileWorley(N, 9, 3);
+    const crackW2 = tileWorley(N, 20, 17);
     const warp = tileFbm(N, 5, 3, 61);
-    const grit = tileFbm(N, 64, 2, 71);
+    const grit = tileFbm(N, 40, 2, 71);
     const med = tileFbm(N, 12, 4, 83);
     const macro = tileFbm(N, 3, 4, 91);
     for (let y = 0; y < N; y++) {
@@ -403,8 +403,11 @@ function makeDetailTex(assets) {
         ripple = Math.pow(ripple, 1.5) * 0.72 + med[i] * 0.28;
         // B : gravel / pebble speckle
         let peb = smoothstep(0.55, 0.85, crackW2.f1[i]) * 0.5 + grit[i] * 0.55 + med[i] * 0.25;
-        // A : macro splotch for large-scale material variation
-        const mac = clamp(macro[i] * 1.25 - 0.12, 0, 1);
+        // A : hand-drawn cross-hatch strokes, blended into every material below
+        const sx = x / N, sy = y / N;
+        const s1 = Math.abs(((sx * 15 + sy * 9 + (warp[i] - 0.5) * 2.2) % 1 + 1) % 1 - 0.5) * 2;
+        const s2 = Math.abs(((sx * -11 + sy * 13 + (med[i] - 0.5) * 2.6) % 1 + 1) % 1 - 0.5) * 2;
+        const mac = clamp(smoothstep(0.16, 0.62, s1) * 0.55 + smoothstep(0.22, 0.7, s2) * 0.45, 0, 1);
         const o = i * 4;
         d[o] = clamp(crack, 0, 1) * 255;
         d[o + 1] = clamp(ripple, 0, 1) * 255;
@@ -420,12 +423,12 @@ function makeDetailTex(assets) {
 
 function makeRockTex(assets) {
   return assets.get('ter.rock', () => {
-    const N = 512;
+    const N = 256;
     const c = canvasOf(N), g = c.getContext('2d');
     const img = g.createImageData(N, N), d = img.data;
     const warp = tileFbm(N, 4, 4, 211);
-    const fine = tileFbm(N, 26, 3, 223);
-    const frac = tileWorley(N, 9, 233);
+    const fine = tileFbm(N, 18, 3, 223);
+    const frac = tileWorley(N, 7, 233);
     for (let y = 0; y < N; y++) {
       for (let x = 0; x < N; x++) {
         const i = y * N + x;
@@ -467,15 +470,15 @@ function makeGroundNormal(assets) {
 const TER_HEAD = /* glsl */ `
 uniform sampler2D tDetail;
 uniform sampler2D tRock;
-uniform sampler2D tNorm;
 uniform vec3 cSand, cHard, cRock, cRock2, cGrass, cGrass2, cGravel, cRoad, cWash;
 uniform float uBumpStrength;
 varying vec4 vTer;
+varying vec2 vTer2;
 varying vec3 vTerWN;
 float gTerRough = 1.0;
 vec3  gTerWN = vec3(0.0, 1.0, 0.0);
-vec2  gTerRuv = vec2(0.0);
 float gTerRockW = 0.0;
+float gTerBumpH = 0.0;
 `;
 
 const TER_SPLAT = /* glsl */ `
@@ -486,19 +489,20 @@ const TER_SPLAT = /* glsl */ `
   float slope = 1.0 - clamp(wn.y, 0.0, 1.0);
 
   vec4 dA = texture2D(tDetail, wp.xz * 0.135);
-  vec4 dB = texture2D(tDetail, wp.xz * 0.0161 + vec2(0.31, 0.77));
-  float macro  = dB.a;
-  float macro2 = dB.g;
+  // macro material variation is baked per-vertex: it is 70 m wavelength, so vertex
+  // rate is plenty and it saves a full texture fetch on every ground pixel.
+  float macro  = vTer.z;
+  float macro2 = vTer2.x;
 
   vec3 an = abs(wn);
   vec2 ruv;
   if (an.y >= max(an.x, an.z))      ruv = wp.xz * 0.145;
   else if (an.x >= an.z)            ruv = wp.zy * 0.145;
   else                              ruv = wp.xy * 0.145;
-  gTerRuv = ruv;
-  vec3 rk = texture2D(tRock, ruv).rgb;
-
   float wRock  = smoothstep(0.26, 0.52, slope + (dA.r - 0.5) * 0.20 + (macro - 0.5) * 0.10);
+  // The strata fetch only matters on cliffs; the desert floor never pays for it.
+  vec3 rk = vec3(0.5);
+  if (wRock > 0.004) rk = texture2D(tRock, ruv).rgb;
   float wRoad  = clamp(vTer.x, 0.0, 1.0);
   float wWash  = clamp(vTer.y, 0.0, 1.0) * (1.0 - wRock);
   float wGrass = (1.0 - wRock) * (1.0 - wRoad) * smoothstep(0.26, 0.05, slope)
@@ -508,16 +512,19 @@ const TER_SPLAT = /* glsl */ `
   float sandAmt = clamp(smoothstep(0.36, 0.70, macro2) * (1.0 - slope * 1.7), 0.0, 1.0);
   vec3 col = mix(cHard, cSand, sandAmt);
   col *= mix(1.0, 0.68 + 0.36 * dA.r, (1.0 - sandAmt) * 0.9);          // crack polygons
-  col *= mix(1.0, 0.84 + 0.30 * dA.g, sandAmt * 0.80);                 // wind ripples
-  col *= 0.86 + 0.28 * dA.b;                                           // grit
+  col *= mix(1.0, 0.90 + 0.19 * dA.g, sandAmt * 0.65);                 // wind ripples
+  col *= 0.89 + 0.22 * dA.b;                                           // grit
   col *= 0.90 + 0.22 * macro;                                          // macro breakup
+  // hand-inked hatching baked into the atlas: painterly feel with no extra fetch
+  col *= mix(1.0, 0.80 + 0.26 * dA.a, 0.55);
 
   // --- dry wash: pale silt + rounded gravel ---------------------------------
   col = mix(col, mix(cWash, cGravel, smoothstep(0.35, 0.8, dA.b)) * (0.88 + 0.26 * dA.g), wWash * 0.9);
 
   // --- graded dirt road ------------------------------------------------------
   vec3 roadCol = cRoad * (0.80 + 0.34 * dA.b) * (0.92 + 0.16 * dA.g);
-  float rut = smoothstep(0.30, 0.62, abs(fract(vTer.z * 3.0) - 0.5) * 2.0);
+  float lat = (wp.x - (6.0 - 0.30 * (42.0 - wp.z) + 10.0 * sin((42.0 - wp.z) * 0.0118))) * 0.42;
+  float rut = smoothstep(0.30, 0.62, abs(fract(lat) - 0.5) * 2.0);
   roadCol *= mix(0.82, 1.05, rut);
   col = mix(col, roadCol, wRoad);
 
@@ -535,68 +542,83 @@ const TER_SPLAT = /* glsl */ `
   col *= mix(0.55, 1.06, clamp(vTer.w, 0.0, 1.0));
 
   gTerRough = mix(mix(0.99, 0.86, wRock), 0.93, wRoad);
+  // relief height for the derivative bump below — no extra fetch
+  gTerBumpH = mix(dA.r * 0.55 + dA.b * 0.45, rk.r * 0.7 + rk.b * 0.3, wRock)
+            + (dA.g - 0.5) * 0.35 * sandAmt;
   diffuseColor.rgb *= col;
 }
 `;
 
 const TER_NORMAL = /* glsl */ `
 {
-  float d = length(cameraPosition - vCelWorldPos);
-  float bf = uBumpStrength * (1.0 - smoothstep(50.0, 190.0, d));
+  // Mikkelsen-style derivative bump. Cheaper than a second sampler in software,
+  // and it tracks whatever the splat just decided this surface is made of.
+  float dcam = length(cameraPosition - vCelWorldPos);
+  float bf = uBumpStrength * (1.0 - smoothstep(28.0, 82.0, dcam));
   if (bf > 0.004) {
-    vec3 nm = texture2D(tNorm, gTerRuv).xyz * 2.0 - 1.0;
-    vec3 an = abs(gTerWN);
-    vec3 T, B;
-    if (an.y >= max(an.x, an.z))      { T = vec3(1.0, 0.0, 0.0); B = vec3(0.0, 0.0, 1.0); }
-    else if (an.x >= an.z)            { T = vec3(0.0, 0.0, 1.0); B = vec3(0.0, 1.0, 0.0); }
-    else                              { T = vec3(1.0, 0.0, 0.0); B = vec3(0.0, 1.0, 0.0); }
-    vec3 pert = normalize(gTerWN + (T * nm.x + B * nm.y) * bf * mix(0.9, 1.7, gTerRockW));
+    vec3 n0 = gTerWN;
+    vec3 dpx = dFdx(vCelWorldPos), dpy = dFdy(vCelWorldPos);
+    vec3 r1 = cross(dpy, n0), r2 = cross(n0, dpx);
+    float det = dot(dpx, r1);
+    vec3 grad = sign(det) * (dFdx(gTerBumpH) * r1 + dFdy(gTerBumpH) * r2);
+    vec3 pert = normalize(abs(det) * n0 - bf * mix(0.32, 0.85, gTerRockW) * grad);
     normal = normalize((viewMatrix * vec4(pert, 0.0)).xyz);
   }
 }
 `;
 
+const TER_DBG = (typeof location !== 'undefined')
+  ? parseInt(new URLSearchParams(location.search).get('terdbg') || '0', 10) : 0;
+
 function makeTerrainMaterial(ctx) {
   const uniforms = {
     tDetail: { value: makeDetailTex(ctx.assets) },
     tRock: { value: makeRockTex(ctx.assets) },
-    tNorm: { value: makeGroundNormal(ctx.assets) },
-    cSand: { value: new THREE.Color(0xd9bb84).convertSRGBToLinear() },
-    cHard: { value: new THREE.Color(0xbe9159).convertSRGBToLinear() },
-    cRock: { value: new THREE.Color(0xa5714a).convertSRGBToLinear() },
-    cRock2: { value: new THREE.Color(0xc99a63).convertSRGBToLinear() },
-    cGrass: { value: new THREE.Color(0x9c9750).convertSRGBToLinear() },
-    cGrass2: { value: new THREE.Color(0x6f7a3e).convertSRGBToLinear() },
-    cGravel: { value: new THREE.Color(0x8d8271).convertSRGBToLinear() },
-    cRoad: { value: new THREE.Color(0xd2b487).convertSRGBToLinear() },
-    cWash: { value: new THREE.Color(0xcdb692).convertSRGBToLinear() },
-    uBumpStrength: { value: 1.0 },
+    cSand: { value: new THREE.Color(0xe3cb9c).convertSRGBToLinear() },
+    cHard: { value: new THREE.Color(0xc8a473).convertSRGBToLinear() },
+    cRock: { value: new THREE.Color(0xb08361).convertSRGBToLinear() },
+    cRock2: { value: new THREE.Color(0xdcbb8b).convertSRGBToLinear() },
+    cGrass: { value: new THREE.Color(0xa8a361).convertSRGBToLinear() },
+    cGrass2: { value: new THREE.Color(0x79854a).convertSRGBToLinear() },
+    cGravel: { value: new THREE.Color(0x9c9382).convertSRGBToLinear() },
+    cRoad: { value: new THREE.Color(0xd8bd93).convertSRGBToLinear() },
+    cWash: { value: new THREE.Color(0xd6c3a3).convertSRGBToLinear() },
+    uBumpStrength: { value: (typeof location !== 'undefined' && location.search.includes('nobump')) ? 0.0 : 1.0 },
   };
 
   const mat = new THREE.MeshStandardMaterial({
     color: 0xffffff, roughness: 0.97, metalness: 0.0, dithering: true,
   });
-  mat.onBeforeCompile = (shader) => {
+  const PLAIN = typeof location !== 'undefined' && location.search.includes('terplain');
+  if (!PLAIN) mat.onBeforeCompile = (shader) => {
     Object.assign(shader.uniforms, uniforms);
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec4 aTer;\nvarying vec4 vTer;\nvarying vec3 vTerWN;')
+      .replace('#include <common>', '#include <common>\nattribute vec4 aTer;\nattribute vec2 aTer2;\nvarying vec4 vTer;\nvarying vec2 vTer2;\nvarying vec3 vTerWN;')
       .replace('#include <beginnormal_vertex>',
-        '#include <beginnormal_vertex>\n  vTer = aTer;\n  vTerWN = normalize(mat3(modelMatrix) * objectNormal);');
+        '#include <beginnormal_vertex>\n  vTer = aTer;\n  vTer2 = aTer2;\n  vTerWN = normalize(mat3(modelMatrix) * objectNormal);');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\n' + TER_HEAD)
-      .replace('#include <map_fragment>', TER_SPLAT)
-      .replace('#include <normal_fragment_maps>', TER_NORMAL)
+      .replace('#include <map_fragment>',
+        TER_DBG === 1 ? '{ diffuseColor.rgb *= mix(cHard, cSand, vTer2.x) * mix(0.6,1.05,vTer.w); }'
+        : TER_DBG === 2 ? TER_SPLAT.replace('if (wRock > 0.004) rk = texture2D(tRock, ruv).rgb;', '')
+        : TER_SPLAT)
+      .replace('#include <normal_fragment_maps>', TER_DBG ? '' : TER_NORMAL)
       .replace('#include <roughnessmap_fragment>',
         '#include <roughnessmap_fragment>\n  roughnessFactor = gTerRough;');
   };
-  mat.customProgramCacheKey = () => 'bl4-terrain';
+  if (!PLAIN) mat.customProgramCacheKey = () => 'bl4-terrain';
 
+  const Q = typeof location !== 'undefined' ? location.search : '';
+  if (Q.includes('nocel')) { mat.userData.noCel = true; return mat; }
+  const fx = Q.includes('nocelfx') ? 0 : 1;
   makeCel(mat, {
     bands: 3, bandSoftness: 0.030, bandFloor: 0.30,
     warm: 0xfff0d2, cool: 0x8fb0d4,
-    rimStrength: 0.10, rimRange: 60,
-    hatch: 0.42, hatchScale: 0.65, grain: 0.55, grainScale: 0.55,
-    specBand: 0.35, wobble: 0.10, outlineWidth: 0.55,
+    rimStrength: 0.11 * fx, rimRange: 70,
+    // hatch / grain / wobble all cost a multi-octave 3D noise per pixel and the
+    // terrain owns most of the frame — its hand-painted detail is in the splat.
+    hatch: 0.0, grain: 0.0, wobble: 0.0,
+    specBand: 0.0, outlineWidth: 0.55,
   });
   mat.userData.terrainUniforms = uniforms;
   return mat;
@@ -623,6 +645,7 @@ function buildGrid(cx, cz, size, segs, holeQuads, withCavity) {
   const nor = new Float32Array(n * n * 3);
   const uv = new Float32Array(n * n * 2);
   const ter = new Float32Array(n * n * 4);
+  const ter2 = new Float32Array(n * n * 2);
   const hgt = new Float32Array(n * n);
 
   for (let j = 0; j < n; j++) {
@@ -637,8 +660,10 @@ function buildGrid(cx, cz, size, segs, holeQuads, withCavity) {
       const rw = roadWeight(x, z);
       ter[k * 4] = rw;
       ter[k * 4 + 1] = washWeight(x, z) * (1 - rw * 0.75);
-      ter[k * 4 + 2] = (x - roadX(z)) * 0.14;   // lateral road coord for ruts
+      ter[k * 4 + 2] = fbm2(x * 0.0142 + 41, z * 0.0142 - 17, 3, 33);   // macro
       ter[k * 4 + 3] = 1;
+      ter2[k * 2] = fbm2(x * 0.0068 - 23, z * 0.0068 + 9, 3, 37);       // macro2
+      ter2[k * 2 + 1] = 0;
     }
   }
 
@@ -677,6 +702,7 @@ function buildGrid(cx, cz, size, segs, holeQuads, withCavity) {
   const skirtNor = [];
   const skirtUv = [];
   const skirtTer = [];
+  const skirtTer2 = [];
   const base = n * n;
   const addSkirt = (ring, drop) => {
     const start = base + skirtVerts.length / 3;
@@ -686,6 +712,7 @@ function buildGrid(cx, cz, size, segs, holeQuads, withCavity) {
       skirtNor.push(nor[k * 3], nor[k * 3 + 1], nor[k * 3 + 2]);
       skirtUv.push(uv[k * 2], uv[k * 2 + 1]);
       skirtTer.push(ter[k * 4], ter[k * 4 + 1], ter[k * 4 + 2], ter[k * 4 + 3]);
+      skirtTer2.push(ter2[k * 2], ter2[k * 2 + 1]);
     }
     for (let s = 0; s < ring.length - 1; s++) {
       const a = ring[s], b = ring[s + 1];
@@ -714,17 +741,20 @@ function buildGrid(cx, cz, size, segs, holeQuads, withCavity) {
   const N2 = new Float32Array(vCount * 3);
   const U = new Float32Array(vCount * 2);
   const T = new Float32Array(vCount * 4);
-  P.set(pos); N2.set(nor); U.set(uv); T.set(ter);
+  const T2 = new Float32Array(vCount * 2);
+  P.set(pos); N2.set(nor); U.set(uv); T.set(ter); T2.set(ter2);
   P.set(skirtVerts, n * n * 3);
   N2.set(skirtNor, n * n * 3);
   U.set(skirtUv, n * n * 2);
   T.set(skirtTer, n * n * 4);
+  T2.set(skirtTer2, n * n * 2);
 
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(P, 3));
   geo.setAttribute('normal', new THREE.BufferAttribute(N2, 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(U, 2));
   geo.setAttribute('aTer', new THREE.BufferAttribute(T, 4));
+  geo.setAttribute('aTer2', new THREE.BufferAttribute(T2, 2));
   geo.setIndex(vCount > 65535 ? new THREE.Uint32BufferAttribute(idx, 1)
                               : new THREE.Uint16BufferAttribute(idx, 1));
   geo.computeBoundingSphere();
@@ -740,20 +770,22 @@ export class Terrain {
   }
 
   build() {
+    const Q2 = typeof location !== 'undefined' ? location.search : '';
     const mat = makeTerrainMaterial(this.ctx);
     this.material = mat;
 
     const CX = -10, CZ = -50;
     const cap = this.ctx.cfg?.capture;
-    const coreSegs = cap ? 176 : 208;
+    const coreSegs = cap ? 112 : 168;
 
-    // core: 320 m @ ~1.8 m — the ground you actually walk on
-    const core = new THREE.Mesh(buildGrid(CX, CZ, 320, coreSegs, 0, true), mat);
-    core.castShadow = true; core.receiveShadow = true;
+    // core: 336 m @ 3 m — the ground you actually walk on
+    const core = new THREE.Mesh(buildGrid(CX, CZ, 336, coreSegs, 0, true), mat);
+    core.castShadow = !(typeof location !== 'undefined' && location.search.includes('notershadow'));
+    core.receiveShadow = !Q2.includes('norecv');
     core.name = 'Terrain.core';
-    // mid: 1200 m @ 10 m, hole where the core sits (320/10 = 32 quads)
-    const mid = new THREE.Mesh(buildGrid(CX, CZ, 1200, 120, 32, false), mat);
-    mid.receiveShadow = true; mid.castShadow = false;
+    // mid: 1200 m @ 12 m, hole where the core sits (336/12 = 28 quads)
+    const mid = new THREE.Mesh(buildGrid(CX, CZ, 1200, 100, 28, false), mat);
+    mid.receiveShadow = !Q2.includes('norecv'); mid.castShadow = false;
     mid.userData.noShadowCast = true;
     mid.name = 'Terrain.mid';
     // far: 2400 m @ 60 m, hole where mid sits (1200/60 = 20 quads)
@@ -773,4 +805,19 @@ export class Terrain {
     for (const m of this.meshes) m.geometry.dispose();
     this.material?.dispose();
   }
+}
+
+/* --------------------------------------------------------- shot framing --- */
+
+// The vista capture camera. Landform and vegetation placement is authored
+// against this pose, and tall things are kept out of its central corridor.
+export const VISTA = { x: 6, z: 42, fx: -0.31457, fz: -0.94924, rx: 0.94924, rz: -0.31457 };
+
+/** True if (x,z) sits inside a wedge of `halfDeg` around the vista sightline. */
+export function inSightCorridor(x, z, halfDeg = 22, maxDist = 140) {
+  const dx = x - VISTA.x, dz = z - VISTA.z;
+  const f = dx * VISTA.fx + dz * VISTA.fz;
+  if (f <= 2 || f > maxDist) return false;
+  const r = dx * VISTA.rx + dz * VISTA.rz;
+  return Math.abs(Math.atan2(r, f)) < halfDeg * Math.PI / 180;
 }

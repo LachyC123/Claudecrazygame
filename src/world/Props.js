@@ -267,8 +267,8 @@ export class Props {
     this.matPole = createCelMaterial({
       map: poleTex(A), color: 0xffffff, roughness: 0.95, metalness: 0,
       bands: 3, bandFloor: 0.26, warm: 0xfff0d6, cool: 0x88a8cc,
-      rimStrength: 0.4, rimColor: 0xffd9a8, hatch: 0.55, hatchScale: 3.0,
-      grain: 0.7, specBand: 0.2, outlineWidth: 1.45,
+      rimStrength: 0.4, rimColor: 0xffd9a8, hatch: 0.5, hatchScale: 3.0,
+      grain: 0.5, specBand: 0.2, outlineWidth: 1.45,
     });
     this.matWire = createCelMaterial({
       color: 0x23262a, roughness: 0.55, metalness: 0.4,
@@ -600,7 +600,7 @@ export class Props {
       rimStrength: 0.35, hatch: 0.4, grain: 0.8, specBand: 0.2, outlineWidth: 1.0,
     });
     const geo = new THREE.BoxGeometry(1, 0.06, 0.22);
-    const N = 150;
+    const N = 90;
     const inst = new THREE.InstancedMesh(geo, mat, N);
     let n = 0;
     for (let i = 0; n < N && i < N * 20; i++) {

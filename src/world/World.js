@@ -36,12 +36,13 @@ export class World {
     // One call installs sun + cascades + sky + IBL + aerial fog. Never make lights here.
     this.lighting = installLightRig(ctx, {
       timeOfDay: 0.72,
-      shadowMapSize: 1024,
-      shadowDistance: 260,
-      shadowSplits: [0.035, 0.16, 1.0],
+      cascades: 2,
+      shadowMapSize: 1280,
+      shadowDistance: 200,
+      shadowSplits: [0.10, 1.0],
       fogScale: 0.92,
     });
-    this.lighting.setStyle({ detailNear: 40, detailFar: 150 });
+    this.lighting.setStyle({ detailNear: 9, detailFar: 34 });
     this.lighting.sky?.setParams({ coverage: 0.53, cloudScale: 1.15, skyGain: 1.02 });
 
     if (!off.has('terrain')) {

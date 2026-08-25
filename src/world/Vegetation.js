@@ -20,7 +20,7 @@ import * as BGU from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { createCelInstancedMaterial } from '../render/index.js';
 import {
   heightAt, normalAt, slopeAt, clamp, lerp, smoothstep, hash2, fbm2,
-  canvasOf, finishTex, roadX, washZ, washWeight, ARENA, CAMP,
+  canvasOf, finishTex, roadX, washZ, washWeight, inSightCorridor, ARENA, CAMP,
 } from './Terrain.js';
 
 /** Shared wind uniforms — World.update() advances uWindTime. */
@@ -28,7 +28,7 @@ export const WIND = {
   uWindTime: { value: 0 },
   uWindAmp: { value: 0.30 },
   uWindDir: { value: new THREE.Vector2(0.82, 0.57) },
-  uVegFade: { value: new THREE.Vector2(52, 96) },
+  uVegFade: { value: new THREE.Vector2(24, 44) },
 };
 
 /* ------------------------------------------------------------- textures --- */
@@ -151,7 +151,7 @@ uniform vec2 uVegFade; uniform float uAmpScale; uniform float uBendPow;`)
 /** Cross-quad tuft: two intersecting planes, pivot at the base. */
 function tuftGeo() {
   const pos = [], uv = [], nor = [], win = [], idx = [];
-  const planes = [0, Math.PI / 2, Math.PI / 4 + Math.PI / 2];
+  const planes = [0, Math.PI / 2];
   let v = 0;
   for (let p = 0; p < planes.length; p++) {
     const a = planes[p];
@@ -281,11 +281,11 @@ function branchGeo(seed, len, r0, dir, rings = 5, sides = 7) {
 
 /** One alien tree -> { bark, leaf, height, radius } */
 function makeTree(seed) {
-  const H = 7.5 + hash2(seed, 1, 3) * 6.5;
+  const H = 5.6 + hash2(seed, 1, 3) * 4.2;
   const baseR = H * (0.085 + hash2(seed, 2, 5) * 0.05);
   const barkParts = [trunkGeo(seed, H, baseR * 3.0)];
   const leafParts = [];
-  const nB = 3 + Math.floor(hash2(seed, 3, 7) * 3);
+  const nB = 3 + Math.floor(hash2(seed, 3, 7) * 2);
   for (let i = 0; i < nB; i++) {
     const a = (i / nB) * Math.PI * 2 + hash2(seed, i, 11) * 1.4;
     const up = 0.55 + hash2(seed, i, 13) * 0.7;
@@ -300,7 +300,7 @@ function makeTree(seed) {
     const tx = tip.x + Math.sin(seed + i) * baseR * 0.5;
     const ty = tip.y + anchorY + len * 0.12;
     const tz = tip.z + Math.cos(seed * 1.3 + i) * baseR * 0.5;
-    const pads = 2 + Math.floor(hash2(seed, i, 23) * 2);
+    const pads = 2;
     for (let k = 0; k < pads; k++) {
       const rr = H * (0.20 + hash2(seed, i * 5 + k, 29) * 0.16);
       const blob = noisyBlob(seed * 3 + i * 11 + k, 1, [1.0, 0.34 + hash2(seed, k, 31) * 0.14, 1.0], 0.30);
@@ -421,14 +421,14 @@ export class Vegetation {
 
   _grass() {
     const cap = this.ctx.cfg?.capture;
-    const want = cap ? 20000 : (this.ctx.cfg?.vegetation?.grass ?? 60000);
+    const want = cap ? 6500 : (this.ctx.cfg?.vegetation?.grass ?? 60000);
     const mat = createCelInstancedMaterial({
       map: grassTex(this.ctx.assets),
       color: 0xffffff, roughness: 0.95, metalness: 0,
       alphaTest: 0.42, side: THREE.DoubleSide, transparent: false,
       bands: 3, bandFloor: 0.34, warm: 0xfff4dc, cool: 0x93b5d6,
       rimStrength: 0.5, rimColor: 0xffe0a8, rimPower: 2.2,
-      hatch: 0.0, grain: 0.5, grainScale: 2.2, specBand: 0.2,
+      hatch: 0.0, grain: 0.0, specBand: 0.2, wobble: 0.0,
     });
     mat.userData.noGBuffer = true;   // contour is painted into the sheet
     windPatch(mat, 1.0, 2.0);
@@ -438,7 +438,7 @@ export class Vegetation {
     const inst = new THREE.InstancedMesh(geo, mat, want);
     inst.instanceMatrix.setUsage(THREE.StaticDrawUsage);
     let n = 0;
-    const R = 130;
+    const R = 105;
     for (let i = 0; n < want && i < want * 8; i++) {
       const ang = hash2(i, 1, 601) * Math.PI * 2;
       const rad = Math.sqrt(hash2(i, 2, 603)) * R;
@@ -449,10 +449,10 @@ export class Vegetation {
       if (hash2(i, 3, 605) > f * 1.15) continue;
       if (Math.hypot(x - CAMP.x, z - CAMP.z) < CAMP.r * 0.75) continue;
       const gy = heightAt(x, z);
-      const s = (0.42 + hash2(i, 4, 607) * 0.62) * (0.72 + f * 0.6);
+      const s = (0.26 + hash2(i, 4, 607) * 0.30) * (0.74 + f * 0.5);
       _e.set(0, hash2(i, 5, 609) * 6.28, 0);
       _q.setFromEuler(_e);
-      _sc.set(s * (0.85 + hash2(i, 6, 611) * 0.5), s * (0.8 + hash2(i, 7, 613) * 0.9), s);
+      _sc.set(s * (0.9 + hash2(i, 6, 611) * 0.6), s * (0.85 + hash2(i, 7, 613) * 0.8), s);
       _v3.set(x, gy - 0.05, z);
       _m4.compose(_v3, _q, _sc);
       inst.setMatrixAt(n, _m4);
@@ -475,12 +475,12 @@ export class Vegetation {
 
   _bushes() {
     const cap = this.ctx.cfg?.capture;
-    const want = cap ? 260 : (this.ctx.cfg?.vegetation?.bushes ?? 700);
+    const want = cap ? 150 : (this.ctx.cfg?.vegetation?.bushes ?? 700);
     const mat = createCelInstancedMaterial({
       vertexColors: true, color: 0xffffff, roughness: 0.92, flatShading: true,
       bands: 3, bandFloor: 0.30, warm: 0xfff2d8, cool: 0x8db2d6,
-      rimStrength: 0.42, rimColor: 0xffe2ac, hatch: 0.35, hatchScale: 3.0,
-      grain: 0.8, grainScale: 2.0, specBand: 0.3, outlineWidth: 1.1,
+      rimStrength: 0.42, rimColor: 0xffe2ac, hatch: 0.0,
+      grain: 0.30, grainScale: 2.0, specBand: 0.3, wobble: 0.0, outlineWidth: 1.1,
     });
     windPatch(mat, 0.16, 2.4);
     this.bushMat = mat;
@@ -528,14 +528,14 @@ export class Vegetation {
       vertexColors: true, map: barkTex(this.ctx.assets), color: 0xffffff,
       roughness: 0.94, bands: 3, bandFloor: 0.28,
       warm: 0xfff1d6, cool: 0x8aaed3, rimStrength: 0.34, rimColor: 0xffd7a2,
-      hatch: 0.5, hatchScale: 2.2, grain: 0.7, specBand: 0.3, outlineWidth: 1.4,
+      hatch: 0.0, grain: 0.30, specBand: 0.3, wobble: 0.0, outlineWidth: 1.4,
     });
     const leafMat = createCelInstancedMaterial({
       vertexColors: true, color: 0xffffff, roughness: 0.9, flatShading: true,
       bands: 3, bandFloor: 0.32, warm: 0xfff4d8, cool: 0x86aed6,
       rimStrength: 0.55, rimColor: 0xffe6b0, rimPower: 2.6,
-      hatch: 0.35, hatchScale: 2.6, grain: 0.85, grainScale: 1.4,
-      specBand: 0.25, outlineWidth: 1.5,
+      hatch: 0.0, grain: 0.24, grainScale: 1.4,
+      specBand: 0.25, wobble: 0.0, outlineWidth: 1.5,
     });
     windPatch(leafMat, 0.09, 1.6);
     this.barkMat = barkMat;
@@ -544,17 +544,20 @@ export class Vegetation {
     const variants = [makeTree(5), makeTree(23), makeTree(41), makeTree(67)];
 
     // Hand-placed hero trees frame the capture shot; the rest scatter by fertility.
+    // Placed against the vista camera at (6, 42) looking down -Z: two framing
+    // trees at the frame edges, the rest kept outside a +/-24 deg sight corridor
+    // so the road and the mesas stay legible.
     const HERO = [
-      [-27.5, 25.0, 3, 1.45], [-19.0, 6.0, 1, 1.15], [26.0, 9.5, 0, 1.25],
-      [-46.0, -18.0, 2, 1.30], [12.0, -58.0, 1, 1.20], [-70.0, -96.0, 0, 1.5],
-      [40.0, -64.0, 3, 1.35], [-6.0, -104.0, 2, 1.4], [64.0, -120.0, 1, 1.3],
-      [-118.0, -60.0, 0, 1.35], [86.0, -18.0, 2, 1.2], [-96.0, -190.0, 3, 1.6],
+      [-21.0, 29.0, 3, 1.00], [22.3, 12.2, 0, 0.92], [-33.0, 34.0, 1, 0.85],
+      [-51.7, -5.9, 2, 1.05], [50.1, -58.7, 1, 1.10], [-99.5, -91.4, 0, 1.15],
+      [62.0, -20.0, 3, 0.95], [-72.0, -140.0, 2, 1.20], [18.0, -150.0, 1, 1.05],
+      [-140.0, -40.0, 0, 1.05], [-118.0, -186.0, 3, 1.15], [88.0, -104.0, 2, 1.0],
     ];
     const slots = [[], [], [], []];
     for (const [x, z, v, s] of HERO) slots[v].push({ x, z, s, r: hash2(x | 0, z | 0, 31) * 6.28 });
 
     const cap = this.ctx.cfg?.capture;
-    const want = cap ? 34 : (this.ctx.cfg?.vegetation?.trees ?? 90);
+    const want = cap ? 16 : (this.ctx.cfg?.vegetation?.trees ?? 90);
     let placed = 0;
     for (let i = 0; placed < want && i < want * 40; i++) {
       const ang = hash2(i, 1, 801) * Math.PI * 2;
@@ -566,6 +569,7 @@ export class Vegetation {
       if (hash2(i, 3, 805) > f * 0.5) continue;
       if (Math.hypot(x - CAMP.x, z - CAMP.z) < CAMP.r + 8) continue;
       if (Math.abs(x - roadX(z)) < 7) continue;
+      if (inSightCorridor(x, z, 24, 150)) continue;
       const v = Math.floor(hash2(i, 4, 807) * 4) % 4;
       slots[v].push({ x, z, s: 0.75 + hash2(i, 5, 809) * 0.7, r: hash2(i, 6, 811) * 6.28 });
       placed++;

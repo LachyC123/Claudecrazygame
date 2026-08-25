@@ -109,8 +109,9 @@ export class Player {
   applyRecoil(pitch = 0, yaw = 0, kick = 0) { this.rig.applyRecoil(pitch, yaw, kick); }
   addTrauma(t) { this.rig.addTrauma(t); }
   addImpulse(v) { this.velocity.add(v); if (v.y > 0.4) this.controller.grounded = false; }
+  /** `y` is an eye height, matching `position`. */
   teleport(x, y, z) {
-    this.controller.teleport(x, y - this.controller.eyeHeight, z);
+    this.controller.teleport(x, y - TUNE.standEye, z);
     this._lastOut.copy(this.position);
   }
 
@@ -214,15 +215,18 @@ export class Player {
       // Deterministic posed frame: exactly the transform capture.js asked for.
       this.ads = !!ctx.forceAds;
       this._applyAds(this.ads);
-      // Safety net only: if the world agent grows terrain under an authored
-      // capture pose, lift the eye out of the rock rather than shooting a black
-      // frame. Never lowers, never touches yaw/pitch.
+      // Safety net only. The capture poses were authored against a flat
+      // placeholder world; now that terrain exists, some of them sit inside a
+      // hill or at knee height, which frames the shot from the dirt. Lift the
+      // eye to standing height when it is below a crouch. Never lowers the
+      // camera, never touches yaw/pitch, and warns when it fires.
       if (!this._poseChecked) {
         this._poseChecked = true;
         const g = this.collision.heightAt(this.position.x, this.position.z);
-        if (Number.isFinite(g) && this.position.y < g + 0.9) {
-          console.warn(`[player] capture pose was inside terrain (y=${this.position.y.toFixed(2)}, ground=${g.toFixed(2)}) — lifting`);
-          this.position.y = g + 1.7;
+        if (Number.isFinite(g) && this.position.y < g + 1.2) {
+          console.warn(`[player] capture pose sat ${(this.position.y - g).toFixed(2)}m over terrain at `
+            + `(${this.position.x.toFixed(1)}, ${this.position.z.toFixed(1)}) — raising the eye to standing height`);
+          this.position.y = g + TUNE.standEye;
         }
       }
       this.controller.syncFromEye();

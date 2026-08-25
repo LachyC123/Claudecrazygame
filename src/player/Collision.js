@@ -522,29 +522,32 @@ export class Collision {
     const len = delta.length();
     const maxStep = radius * 0.45;
     const steps = Math.max(1, Math.min(24, Math.ceil(len / maxStep)));
-    const inv = 1 / steps;
-    _t0.copy(delta).multiplyScalar(inv);
+    _t0.copy(delta).multiplyScalar(1 / steps);
     for (let i = 0; i < steps; i++) {
       pos.add(_t0);
       this.depenetrate(pos, radius, height, vel, res, 4);
+      // Terrain last within each step, so a bridge deck over a valley still wins,
+      // but a fast move can never skip over a ridge between two samples.
+      this._terrain(pos, vel, res);
     }
-    // terrain floor — after the shape pass so a bridge over a valley still wins
+  }
+
+  _terrain(pos, vel, res) {
     const g = this.sampleGround(pos.x, pos.z);
-    if (pos.y < g) {
-      const gn = this._gn;
-      pos.y = g;
-      if (gn.y >= this.groundCos) {
-        if (!res.grounded || g >= res.groundY) {
-          res.grounded = true; res.groundNormal.copy(gn); res.groundY = g;
-          res.groundSurface = this.surfaceAt(pos.x, pos.z, gn.y);
-          res.groundSlippery = 0;
-        }
-        if (vel && vel.y < 0) { res.impact = Math.max(res.impact, -vel.y); vel.y = 0; }
-      } else if (vel) {
-        const dot = vel.dot(gn);
-        if (dot < 0) vel.addScaledVector(gn, -dot);
-        res.hitWall = true; res.wallNormal.copy(gn);
+    if (pos.y >= g) return;
+    const gn = this._gn;
+    pos.y = g;
+    if (gn.y >= this.groundCos) {
+      if (!res.grounded || g >= res.groundY) {
+        res.grounded = true; res.groundNormal.copy(gn); res.groundY = g;
+        res.groundSurface = this.surfaceAt(pos.x, pos.z, gn.y);
+        res.groundSlippery = 0;
       }
+      if (vel && vel.y < 0) { res.impact = Math.max(res.impact, -vel.y); vel.y = 0; }
+    } else if (vel) {
+      const dot = vel.dot(gn);
+      if (dot < 0) vel.addScaledVector(gn, -dot);
+      res.hitWall = true; res.wallNormal.copy(gn);
     }
   }
 
@@ -592,7 +595,6 @@ export class Collision {
             _t0.set(delta.x, 0, delta.z);
             this.slide(pos, _t0, radius, height, vel, res2);
             const nx = pos.x - _t1.x, nz = pos.z - _t1.z;
-            void v1x; void v1y; void v1z;
             if (Math.sqrt(nx * nx + nz * nz) > got + 0.002) {
               took = true;
               res.grounded = true;

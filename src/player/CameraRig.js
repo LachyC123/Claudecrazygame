@@ -113,6 +113,13 @@ export class CameraRig {
       dashFov: 12,
       slideFov: 5,
       slideRollDeg: 4.2,
+      // `cfg.fov` is a *vertical* FOV, and at 16:9 a 78° vertical is ~107°
+      // horizontal — wide-angle enough that near geometry smears at the frame
+      // edge and the midground collapses. Cap the horizontal angle the way
+      // shipped shooters do (Hor+), which leaves narrow configs and 4:3 alone
+      // and only bites on wide displays. Sprint/dash kicks are added *after*
+      // the clamp so the punch still reads.
+      maxHorizontalFov: 96,
       adsBobScale: 0.22,
       adsSwayScale: 0.28,
       traumaPitch: 0.055,
@@ -121,6 +128,14 @@ export class CameraRig {
       traumaPos: 0.055,
       recoilAimTransfer: 0.30,  // fraction of recoil that actually climbs the aim
     };
+  }
+
+  /** Vertical FOV, Hor+ clamped for the current aspect. */
+  baseFov(vertical) {
+    const aspect = this.camera.aspect || 16 / 9;
+    if (aspect <= 1.0001) return vertical;
+    const maxV = 2 * Math.atan(Math.tan(this.tune.maxHorizontalFov * 0.5 * DEG) / aspect) / DEG;
+    return Math.min(vertical, maxV);
   }
 
   // ── external API ──────────────────────────────────────────────────────────
@@ -183,7 +198,7 @@ export class CameraRig {
     if (!this.enabled || dt <= 0) {
       cam.position.copy(p.position);
       cam.rotation.set(p.pitch, p.yaw, 0, 'YXZ');
-      const targetFov = this.ads ? cfg.adsFov : cfg.fov;
+      const targetFov = this.baseFov(this.ads ? cfg.adsFov : cfg.fov);
       this.adsT.set(this.ads ? 1 : 0);
       this.fov.set(targetFov); this.fov.target = targetFov;
       if (Math.abs(cam.fov - targetFov) > 1e-3) { cam.fov = targetFov; cam.updateProjectionMatrix(); }
@@ -309,7 +324,8 @@ export class CameraRig {
     cam.updateMatrixWorld();
 
     // ── FOV: ads blend + sprint / speed / dash kick
-    const base = cfg.fov + (cfg.adsFov - cfg.fov) * adsBlend;
+    const hip = this.baseFov(cfg.fov), aim = this.baseFov(cfg.adsFov);
+    const base = hip + (aim - hip) * adsBlend;
     let kick = 0;
     if (st.sprinting) kick += T.sprintFov;
     if (st.sliding) kick += T.slideFov;

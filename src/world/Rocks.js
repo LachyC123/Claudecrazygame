@@ -130,7 +130,7 @@ export function makeRockGeo(seed, o = {}) {
 
 function rockDetailTex(assets) {
   return assets.get('rock.detail', () => {
-    const N = 256;
+    const N = 192;
     const a = tileFbm(N, 14, 4, 401);
     const w = tileWorley(N, 8, 411);
     const c = canvasOf(N), g = c.getContext('2d');
@@ -150,7 +150,7 @@ function rockDetailTex(assets) {
 }
 function rockNormalTex(assets) {
   return assets.get('rock.norm', () => {
-    const N = 256;
+    const N = 192;
     const a = tileFbm(N, 20, 4, 421);
     const w = tileWorley(N, 9, 431);
     const h = new Float32Array(N * N);
@@ -243,8 +243,8 @@ export class Rocks {
       vertexColors: true, color: 0xffffff, roughness: 0.93, metalness: 0.0,
       flatShading: true, bands: 3, bandSoftness: 0.028, bandFloor: 0.28,
       warm: 0xfff0d4, cool: 0x8badd0, rimStrength: 0.34, rimColor: 0xffd39a,
-      hatch: 0.55, hatchScale: 1.5, grain: 0.85, grainScale: 1.0,
-      specBand: 0.5, outlineWidth: 1.35,
+      hatch: 0.0, grain: 0.22, grainScale: 1.0,
+      specBand: 0.5, wobble: 0.0, outlineWidth: 1.35,
     });
     applyTriplanarRock(rock, ctx.assets, 0.5, 0.8);
     this.material = rock;
@@ -252,8 +252,8 @@ export class Rocks {
     const rockInst = createCelInstancedMaterial({
       vertexColors: true, color: 0xffffff, roughness: 0.93, flatShading: true,
       bands: 3, bandFloor: 0.28, warm: 0xfff0d4, cool: 0x8badd0,
-      rimStrength: 0.32, hatch: 0.4, hatchScale: 1.4, grain: 0.8,
-      specBand: 0.45, outlineWidth: 1.15,
+      rimStrength: 0.32, hatch: 0.0, grain: 0.22,
+      specBand: 0.45, wobble: 0.0, outlineWidth: 1.15,
     });
     applyTriplanarRock(rockInst, ctx.assets, 0.55, 0.8);
     this.instMaterial = rockInst;
@@ -392,9 +392,9 @@ export class Rocks {
   _buildFields(mat) {
     const cap = this.ctx.cfg?.capture;
     const tiers = [
-      { count: cap ? 54 : 64, detail: 2, min: 1.5, max: 4.4, seed: 100, planes: 6, big: true },
-      { count: cap ? 150 : 190, detail: 1, min: 0.6, max: 1.7, seed: 200, planes: 5, big: false },
-      { count: cap ? 260 : 340, detail: 1, min: 0.18, max: 0.6, seed: 300, planes: 4, big: false },
+      { count: cap ? 40 : 64, detail: 2, min: 1.5, max: 4.4, seed: 100, planes: 6, big: true },
+      { count: cap ? 110 : 190, detail: 1, min: 0.6, max: 1.7, seed: 200, planes: 5, big: false },
+      { count: cap ? 170 : 340, detail: 1, min: 0.18, max: 0.6, seed: 300, planes: 4, big: false },
     ];
     const R = 220;
     for (let ti = 0; ti < tiers.length; ti++) {
@@ -424,7 +424,7 @@ export class Rocks {
           if (dArena < 15 && t.big) continue;
           if (Math.abs(x - roadX(z)) < (t.big ? 8.5 : 5.0)) continue;
           if (Math.hypot(x - CAMP.x, z - CAMP.z) < CAMP.r + (t.big ? 6 : 0)) continue;
-          if (slopeAt(x, z) > 0.62) continue;
+          if (slopeAt(x, z) > 0.34) continue;
           // cluster: rocks like company
           const clump = fbm2(x * 0.022, z * 0.022, 3, 71);
           if (hash2(s, 3, 13) > 0.20 + clump * 1.15) continue;
@@ -439,7 +439,7 @@ export class Rocks {
           );
           _q.setFromEuler(_e);
           _s.set(sc * (0.85 + hash2(s, 8, 31) * 0.4), sc * (0.8 + hash2(s, 9, 37) * 0.45), sc * (0.85 + hash2(s, 10, 41) * 0.4));
-          _v.set(x, gy - sc * 0.24, z);
+          _v.set(x, gy - sc * 0.34, z);
           _m4.compose(_v, _q, _s);
           inst.setMatrixAt(n, _m4);
           const warm = hash2(s, 11, 43);
