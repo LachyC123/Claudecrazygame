@@ -28,30 +28,39 @@ export class World {
   async build() {
     const { ctx } = this;
     ctx.scene.background = null;
+    // dev: ?worldoff=grass,bush,tree,rocks,props,camp,terrain — isolate a layer's cost
+    const off = new Set((new URLSearchParams(location.search).get('worldoff') || '')
+      .split(',').map((s) => s.trim()).filter(Boolean));
+    this.off = off;
 
     // One call installs sun + cascades + sky + IBL + aerial fog. Never make lights here.
     this.lighting = installLightRig(ctx, {
-      timeOfDay: 0.78,
-      shadowDistance: 320,
-      shadowSplits: [0.03, 0.14, 1.0],
+      timeOfDay: 0.72,
+      shadowMapSize: 1024,
+      shadowDistance: 260,
+      shadowSplits: [0.035, 0.16, 1.0],
       fogScale: 0.92,
     });
     this.lighting.setStyle({ detailNear: 40, detailFar: 150 });
     this.lighting.sky?.setParams({ coverage: 0.53, cloudScale: 1.15, skyGain: 1.02 });
 
-    this.terrain = new Terrain(ctx);
-    this.group.add(this.terrain.build());
-
-    this.rocks = new Rocks(ctx, this);
-    this.group.add(this.rocks.build());
-
-    this.structures = new Structures(ctx, this);
-    this.group.add(this.structures.build());
-
-    this.props = new Props(ctx, this);
-    this.group.add(this.props.build());
-
-    this.vegetation = new Vegetation(ctx, this);
+    if (!off.has('terrain')) {
+      this.terrain = new Terrain(ctx);
+      this.group.add(this.terrain.build());
+    }
+    if (!off.has('rocks')) {
+      this.rocks = new Rocks(ctx, this);
+      this.group.add(this.rocks.build());
+    }
+    if (!off.has('camp')) {
+      this.structures = new Structures(ctx, this);
+      this.group.add(this.structures.build());
+    }
+    if (!off.has('props')) {
+      this.props = new Props(ctx, this);
+      this.group.add(this.props.build());
+    }
+    this.vegetation = new Vegetation(ctx, this, off);
     this.group.add(this.vegetation.build());
 
     this.spawn.set(ARENA.x, heightAt(ARENA.x, ARENA.z) + 1.7, ARENA.z);

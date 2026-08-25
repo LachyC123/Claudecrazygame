@@ -347,15 +347,16 @@ export class CameraRig {
     if (pfx.setLowHealth) pfx.setLowHealth(this.lowHealth);
 
     // Depth of field: focus on whatever the crosshair is over, re-probed a few
-    // times a second (a full ray march every frame is wasted work).
-    if (pfx.setDofFocus && this.player.collision) {
+    // times a second (a full ray march every frame is wasted work). In capture
+    // mode we leave focus alone — the establishing shot belongs to World/render.
+    if (pfx.setDofFocus && this.player.collision && !posed) {
       this._focusAcc -= dt;
-      if (posed || this._focusAcc <= 0) {
+      if (this._focusAcc <= 0) {
         this._focusAcc = 0.12;
         this.camera.getWorldDirection(_v);
         const d = this.player.collision.rayDistance(this.camera.position, _v, 180);
         const target = Math.max(2.2, Math.min(160, d));
-        this.focusDistance = posed ? target : this.focusDistance + (target - this.focusDistance) * 0.35;
+        this.focusDistance += (target - this.focusDistance) * 0.35;
         pfx.setDofFocus(this.focusDistance);
       }
     }

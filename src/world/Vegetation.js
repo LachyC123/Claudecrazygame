@@ -403,18 +403,19 @@ const _sc = new THREE.Vector3();
 const _col = new THREE.Color();
 
 export class Vegetation {
-  constructor(ctx, world) {
+  constructor(ctx, world, off) {
     this.ctx = ctx;
     this.world = world;
+    this.off = off || new Set();
     this.group = new THREE.Group();
     this.group.name = 'Vegetation';
     this.meshes = [];
   }
 
   build() {
-    this._grass();
-    this._bushes();
-    this._trees();
+    if (!this.off.has('grass')) this._grass();
+    if (!this.off.has('bush')) this._bushes();
+    if (!this.off.has('tree')) this._trees();
     return this.group;
   }
 

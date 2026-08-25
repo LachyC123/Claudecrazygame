@@ -5,3 +5,5 @@ shots/
 *.log
 .probe.mjs
 _scratch/
+probe-tmp.mjs
+shots/

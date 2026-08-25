@@ -73,6 +73,9 @@ export class Player {
     this.frozen = !!ctx.captureRequest;
     this.rig.enabled = !this.frozen;
 
+    // World publishes a spawn point (eye height above its terrain) — use it.
+    const ws = ctx.world?.spawn;
+    if (ws && typeof ws.x === 'number' && !ctx.captureRequest) this.position.copy(ws);
     this.spawn = this.position.clone();
     this._lastOut = this.position.clone();
     this.controller.syncFromEye();
@@ -211,6 +214,17 @@ export class Player {
       // Deterministic posed frame: exactly the transform capture.js asked for.
       this.ads = !!ctx.forceAds;
       this._applyAds(this.ads);
+      // Safety net only: if the world agent grows terrain under an authored
+      // capture pose, lift the eye out of the rock rather than shooting a black
+      // frame. Never lowers, never touches yaw/pitch.
+      if (!this._poseChecked) {
+        this._poseChecked = true;
+        const g = this.collision.heightAt(this.position.x, this.position.z);
+        if (Number.isFinite(g) && this.position.y < g + 0.9) {
+          console.warn(`[player] capture pose was inside terrain (y=${this.position.y.toFixed(2)}, ground=${g.toFixed(2)}) — lifting`);
+          this.position.y = g + 1.7;
+        }
+      }
       this.controller.syncFromEye();
       this.rig.update(0, this.controller.state);
       this._lastOut.copy(this.position);
