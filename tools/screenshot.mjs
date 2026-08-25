@@ -7,7 +7,7 @@ const args = process.argv.slice(2);
 const url = args[0] || 'http://localhost:5173/';
 const out = args[1] || 'shots/shot.png';
 const getArg = (k, d) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : d; };
-const wait = parseInt(getArg('--wait', '6000'), 10);
+const wait = parseInt(getArg('--wait', '120000'), 10);
 const W = parseInt(getArg('--w', '1920'), 10);
 const H = parseInt(getArg('--h', '1080'), 10);
 const script = getArg('--script', null);
@@ -35,7 +35,7 @@ page.on('pageerror', (e) => logs.push(`[pageerror] ${e.message}`));
 await page.goto(url, { waitUntil: 'load', timeout: 90000 });
 // Prefer the deterministic READY signal; fall back to a fixed wait.
 try {
-  await page.waitForFunction('window.__READY__ === true || window.__BOOT_ERROR__', { timeout: wait + 120000 });
+  await page.waitForFunction('window.__READY__ === true || window.__BOOT_ERROR__', { timeout: wait });
 } catch { logs.push('[warn] READY signal timed out, capturing anyway'); }
 const bootErr = await page.evaluate('window.__BOOT_ERROR__ || null');
 if (bootErr) logs.push('[BOOT_ERROR] ' + bootErr);

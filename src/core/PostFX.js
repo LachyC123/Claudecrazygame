@@ -489,12 +489,13 @@ void main() {
 
   /* ---- chromatic aberration: edges only ---------------------------------- */
   vec3 col;
-  float ca = uCA * (r2 * r2) * 26.0;
-  if (ca > 0.0002) {
+  // ~2.5 device px of split at the extreme corner, zero in the centre
+  float ca = uCA * (r2 * r2) * 0.055;
+  if (ca > 1e-6) {
     vec2 dir = cc * ca;
-    col.r = texture2D(tDiffuse, uv + dir * 1.0).r;
+    col.r = texture2D(tDiffuse, uv + dir).r;
     col.g = texture2D(tDiffuse, uv).g;
-    col.b = texture2D(tDiffuse, uv - dir * 1.0).b;
+    col.b = texture2D(tDiffuse, uv - dir).b;
   } else {
     col = texture2D(tDiffuse, uv).rgb;
   }
@@ -605,12 +606,16 @@ export class PostFX {
     this.ctx = ctx;
     const { renderer, scene, camera } = ctx;
     const fx = cfg.postfx || {};
+    // dev override: ?fxoff=bloom,ao,ink,dof,smaa,mb,sky  (profiling / bug isolation)
+    const _off = (typeof location !== 'undefined' && new URLSearchParams(location.search).get('fxoff')) || '';
+    const off = new Set(_off ? _off.split(',') : []);
+    this._off = off;
 
     // The light rig lives here so the whole render core comes up as one unit even
     // if the world module has not adopted the API yet.
-    this.lighting = installLightRig(ctx);
+    this.lighting = installLightRig(ctx, off.has('sky') ? { sky: false, ibl: false } : undefined);
 
-    this.renderScale = cfg.capture ? 1.5 : (cfg.quality === 'ultra' ? 1.15 : 1.0);
+    this.renderScale = cfg.renderScale ?? (cfg.capture ? 1.0 : (cfg.quality === 'ultra' ? 1.15 : 1.0));
     renderer.getDrawingBufferSize(_size);
     const w = Math.max(2, Math.round(_size.x * this.renderScale));
     const h = Math.max(2, Math.round(_size.y * this.renderScale));
@@ -631,34 +636,34 @@ export class PostFX {
     this.composer.addPass(this.renderPass);
 
     // 3. ink outlines
-    if (fx.outlines !== false && this.gbuffer) {
+    if (fx.outlines !== false && !off.has('ink') && this.gbuffer) {
       this.ink = new InkOutlinePass(this.gbuffer, camera);
       this.composer.addPass(this.ink);
     }
 
     // 4. ambient occlusion
-    if (fx.ssao !== false && this.gbuffer) {
+    if (fx.ssao !== false && !off.has('ao') && this.gbuffer) {
       const aoScale = cfg.capture ? 1.0 : 0.65;
-      this.ao = new AOComputePass(this.gbuffer, camera, w, h, cfg.capture ? 20 : 12, aoScale);
+      this.ao = new AOComputePass(this.gbuffer, camera, w, h, cfg.capture ? 16 : 12, aoScale);
       this.aoApply = new AOApplyPass(this.ao, this.gbuffer);
       this.composer.addPass(this.ao);
       this.composer.addPass(this.aoApply);
     }
 
     // 5. selective bloom — HDR threshold, so only emissives and the sun blow out
-    if (fx.bloom !== false) {
+    if (fx.bloom !== false && !off.has('bloom')) {
       this.bloom = new UnrealBloomPass(new THREE.Vector2(w, h), 0.62, 0.72, 1.0);
       this.composer.addPass(this.bloom);
     }
 
     // 6. camera motion blur
-    if (fx.motionBlur !== false && this.gbuffer) {
+    if (fx.motionBlur !== false && !off.has('mb') && this.gbuffer) {
       this.motionBlur = new MotionBlurPass(this.gbuffer, camera);
       this.composer.addPass(this.motionBlur);
     }
 
     // 7. depth of field
-    if (fx.dof !== false && this.gbuffer) {
+    if (fx.dof !== false && !off.has('dof') && this.gbuffer) {
       this.dof = new DofPass(this.gbuffer);
       this.composer.addPass(this.dof);
     }
@@ -671,7 +676,7 @@ export class PostFX {
     if (fx.vignette === false) this.grade.uniforms.uVignette.value = 0;
 
     // 9. AA
-    if (fx.taa !== false) {
+    if (fx.taa !== false && !off.has('smaa')) {
       this.smaa = new SMAAPass(w, h);
       this.composer.addPass(this.smaa);
     }
@@ -679,6 +684,9 @@ export class PostFX {
     // 10. output transform
     this.output = new OutputPass();
     this.composer.addPass(this.output);
+
+    // ---- optional per-pass profiler (?pfxstats) --------------------------------
+    if (typeof location !== 'undefined' && location.search.includes('pfxstats')) this._instrument();
 
     // ---- driver state ---------------------------------------------------------
     this._ads = 0;
@@ -801,6 +809,23 @@ export class PostFX {
     g.uCA.value = (cfg.postfx?.chromatic === false ? 0 : 1) * (1.0 + this._ads * 0.5);
 
     this.composer.render(d);
+  }
+
+  /** Wraps every pass's render() with a CPU timer. Results in window.__PFX_STATS__. */
+  _instrument() {
+    const stats = {};
+    window.__PFX_STATS__ = stats;
+    for (const pass of this.composer.passes) {
+      const name = pass.constructor.name;
+      const orig = pass.render.bind(pass);
+      stats[name] = 0;
+      pass.render = (...a) => {
+        const t = performance.now();
+        orig(...a);
+        this.ctx.renderer.getContext().flush();
+        stats[name] = stats[name] * 0.9 + (performance.now() - t) * 0.1;
+      };
+    }
   }
 
   dispose() {

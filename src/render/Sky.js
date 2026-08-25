@@ -126,8 +126,8 @@ vec4 cloudDeck(vec3 d, float H, float scale, float cov, float wisp, float speed,
   vec2 q = p + drift;
 
   // domain warp -> hand-painted, non-repeating shapes
-  vec2 w = vec2(fbm3(q * 0.55 + 11.3), fbm3(q * 0.55 + 41.7)) - 0.5;
-  q += w * (wisp > 0.5 ? 1.9 : 1.15);
+  vec2 w = vec2(vnoise(q * 0.55 + 11.3), vnoise(q * 0.55 + 41.7)) - 0.5;
+  q += w * (wisp > 0.5 ? 2.4 : 1.5);
 
   float dns = wisp > 0.5 ? fbmR(q) : fbm4(q);
 
@@ -141,7 +141,7 @@ vec4 cloudDeck(vec3 d, float H, float scale, float cov, float wisp, float speed,
 
   // --- shading: compare against a sample displaced toward the sun -------------
   vec2 sunXZ = normalize(uSunDir.xz + vec2(0.0001, 0.0)) * (0.55 + 0.9 * thick);
-  float lit = wisp > 0.5 ? fbmR(q + sunXZ) : fbm4(q + sunXZ);
+  float lit = wisp > 0.5 ? fbmR(q + sunXZ) : fbm3(q + sunXZ) * 1.07;
   float self = clamp((dns - lit) * 2.6 + 0.52, 0.0, 1.0);
   // thicker cores sit in their own shadow
   self *= mix(1.0, 0.62, smoothstep(covr + sharp, covr + sharp * 3.2, dns));
@@ -184,13 +184,15 @@ void main() {
 
   /* ---- sun ---------------------------------------------------------------- */
   float sd = dot(d, uSunDir);
+  float sp = max(sd, 0.0);
   float cosI = cos(uSunSize * 0.55);
   float cosO = cos(uSunSize);
   float disc = smoothstep(cosO, cosI, sd);
-  float halo = pow(max(sd, 0.0), 260.0) * 1.4
-             + pow(max(sd, 0.0), 26.0) * 0.34
-             + pow(max(sd, 0.0), 5.0) * 0.13;
-  sky += uInscatter * halo * uSunIntensity * 0.9;
+  // Inscatter halo is LDR-ish; only the disc itself is HDR so only it feeds bloom.
+  float halo = pow(sp, 220.0) * 0.55 + pow(sp, 24.0) * 0.20 + pow(sp, 4.0) * 0.085;
+  sky += uInscatter * halo;
+  // broad forward-scatter brightening of the whole sun half of the sky
+  sky += uInscatter * pow(sp, 1.4) * 0.045;
 
   /* ---- cloud decks --------------------------------------------------------- */
   vec4 hi = cloudDeck(d, 2100.0, uCloudScale * 0.55, uCoverage + 0.10, 1.0, 0.0035, 0.25);

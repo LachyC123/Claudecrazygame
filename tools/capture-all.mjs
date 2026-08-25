@@ -11,7 +11,7 @@ const out = get('--out', 'shots/latest');
 const W = parseInt(get('--w', '1600'), 10);
 const H = parseInt(get('--h', '900'), 10);
 const scenes = get('--scenes', 'vista,combat,weapon,enemy,loot,hud').split(',').filter(Boolean);
-const timeout = parseInt(get('--timeout', '180000'), 10);
+const timeout = parseInt(get('--timeout', '300000'), 10);
 
 fs.mkdirSync(out, { recursive: true });
 const EXE = process.env.PW_CHROMIUM || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
