@@ -113,6 +113,7 @@ export class Controller {
     this.mantle = null;
     this.mantleT = 0;
     this.jumpedAt = -1;
+    this.stepGrace = 0;
     this.time = 0;
     this.lastVy = 0;
     this.distance = 0;
@@ -230,7 +231,12 @@ export class Controller {
 
     // ── ground bookkeeping
     let grounded = this.res.grounded;
-    if (!grounded && wasGrounded && v.y <= 0.8 && this.time - this.jumpedAt > 0.12) {
+    // A step-up leaves us briefly airborne over the lip of the tread; hold the
+    // grounded contract for a few frames so we don't snap straight back down.
+    if (this.res.stepped > 0) this.stepGrace = 0.22;
+    else this.stepGrace = Math.max(0, this.stepGrace - dt);
+    if (!grounded && this.stepGrace > 0 && v.y <= 0.4) grounded = true;
+    else if (!grounded && wasGrounded && v.y <= 0.8 && this.time - this.jumpedAt > 0.12) {
       if (this.collision.snapDown(this.feet, T.radius, this.height, TUNE.snapDown, this.res)) {
         grounded = true;
         if (v.y < 0) v.y = 0;
@@ -445,6 +451,7 @@ export class Controller {
     this.grounded = false;
     this.coyote = 0;
     this.jumpBuffer = 0;
+    this.stepGrace = 0;
     this.jumpedAt = this.time;
     this.feet.y += 0.02;
     this.rig?.jump();

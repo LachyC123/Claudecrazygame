@@ -583,11 +583,16 @@ export class Collision {
         if (Number.isFinite(top) && top > _t1.y + 0.02 && _stepN.y >= this.groundCos) {
           pos.set(_t1.x, top + 0.03, _t1.z);
           if (this.capsuleFree(pos, radius, height, 0.05)) {
-            vel.set(v1x, Math.max(0, v1y), v1z);
+            // Restore the velocity we arrived with, not the one the wall ate —
+            // otherwise every step-up bleeds the speed that carries us onto the
+            // tread and the character stalls against the riser.
+            vel.copy(_t2);
+            if (vel.y < 0) vel.y = 0;
             const res2 = _stepRes; res2.reset();
             _t0.set(delta.x, 0, delta.z);
             this.slide(pos, _t0, radius, height, vel, res2);
             const nx = pos.x - _t1.x, nz = pos.z - _t1.z;
+            void v1x; void v1y; void v1z;
             if (Math.sqrt(nx * nx + nz * nz) > got + 0.002) {
               took = true;
               res.grounded = true;
