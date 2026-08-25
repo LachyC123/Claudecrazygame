@@ -99,7 +99,9 @@ export class Player {
   }
 
   // ── external API ──────────────────────────────────────────────────────────
-  setAds(on) { this.ads = !!on; this.rig.setAds(this.ads); return this.ads; }
+  /** Weapons agent may own ADS: the first external call hands control over. */
+  setAds(on) { this._adsExternal = true; return this._applyAds(on); }
+  _applyAds(on) { this.ads = !!on; this.rig.setAds(this.ads); return this.ads; }
   get isAds() { return this.ads; }
   applyRecoil(pitch = 0, yaw = 0, kick = 0) { this.rig.applyRecoil(pitch, yaw, kick); }
   addTrauma(t) { this.rig.addTrauma(t); }
@@ -208,7 +210,7 @@ export class Player {
     if (this.frozen) {
       // Deterministic posed frame: exactly the transform capture.js asked for.
       this.ads = !!ctx.forceAds;
-      this.rig.setAds(this.ads);
+      this._applyAds(this.ads);
       this.controller.syncFromEye();
       this.rig.update(0, this.controller.state);
       this._lastOut.copy(this.position);
@@ -239,7 +241,7 @@ export class Player {
     // aim-down-sights follows the right mouse button unless the weapons agent drives it
     if (input && input.enabled && this.alive && !this._adsExternal) {
       const want = !!input.mouse.right && !this.controller.sprinting && !this.controller.sliding;
-      if (want !== this.ads) this.setAds(want);
+      if (want !== this.ads) this._applyAds(want);
     }
 
     this.rig.lowHealth = this.alive
